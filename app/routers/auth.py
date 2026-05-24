@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User, UserRole
 from app.schemas.schemas import LoginRequest, TokenResponse, UserResponse, UserCreate
-from app.services.auth_service import authenticate_user, create_access_token, hash_password
+from app.services.auth_service import authenticate_user, create_access_token, hash_password, get_current_user
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
@@ -60,3 +60,54 @@ def switch_role(user_id: int, db: Session = Depends(get_db)):
         access_token=token,
         user=UserResponse.model_validate(user)
     )
+
+
+# ─── PASSWORD RESET & CHANGE ───
+
+from pydantic import BaseModel
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.post("/change-password")
+def change_password(
+    request: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    from app.services.auth_service import verify_password, hash_password
+    
+    # Verify current password
+    if not verify_password(request.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Invalid current password")
+        
+    # Update password
+    current_user.hashed_password = hash_password(request.new_password)
+    db.commit()
+    return {"message": "Password updated successfully"}
+
+
+@router.post("/reset-password-admin/{user_id}")
+def reset_password_admin(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    from app.services.auth_service import hash_password
+    
+    # Role guard: Only admin or hr can trigger a password reset for employees
+    if current_user.role.value not in ["admin", "hr"]:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+        
+    # Locate target user
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    # Reset to default Welcome@123
+    user.hashed_password = hash_password("Welcome@123")
+    db.commit()
+    return {"message": f"Password reset to Welcome@123 successfully for {user.full_name}"}
+

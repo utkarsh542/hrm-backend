@@ -7,20 +7,32 @@ from typing import Optional
 from app.database import get_db
 from app.models.attendance import Attendance, AttendanceStatus, LeaveRequest, LeaveType, LeaveStatus, Holiday
 from app.models.employee import Employee
+from app.models.user import User, UserRole
 from app.schemas.schemas import (
     AttendanceCreate, AttendanceCheckIn, AttendanceResponse,
     LeaveRequestCreate, LeaveRequestUpdate, LeaveRequestResponse
 )
+from app.services.auth_service import get_current_user, get_current_employee, require_roles
 
 router = APIRouter(prefix="/api/attendance", tags=["Attendance & Leave"])
 
 
 # ===== ATTENDANCE =====
 @router.post("/check-in")
-def check_in(request: AttendanceCheckIn, db: Session = Depends(get_db)):
+def check_in(
+    request: AttendanceCheckIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_employee: Employee = Depends(get_current_employee)
+):
+    # Enforce data isolation: Employees and Managers can only check-in for themselves
+    target_emp_id = request.employee_id
+    if current_user.role.value in ["employee", "manager"]:
+        target_emp_id = current_employee.id
+
     today = date.today()
     existing = db.query(Attendance).filter(
-        Attendance.employee_id == request.employee_id,
+        Attendance.employee_id == target_emp_id,
         Attendance.date == today
     ).first()
     
@@ -32,7 +44,7 @@ def check_in(request: AttendanceCheckIn, db: Session = Depends(get_db)):
         existing.status = AttendanceStatus.PRESENT
     else:
         attendance = Attendance(
-            employee_id=request.employee_id,
+            employee_id=target_emp_id,
             date=today,
             check_in=datetime.utcnow(),
             status=AttendanceStatus.PRESENT,
@@ -44,10 +56,20 @@ def check_in(request: AttendanceCheckIn, db: Session = Depends(get_db)):
 
 
 @router.post("/check-out")
-def check_out(request: AttendanceCheckIn, db: Session = Depends(get_db)):
+def check_out(
+    request: AttendanceCheckIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_employee: Employee = Depends(get_current_employee)
+):
+    # Enforce data isolation: Employees and Managers can only check-out for themselves
+    target_emp_id = request.employee_id
+    if current_user.role.value in ["employee", "manager"]:
+        target_emp_id = current_employee.id
+
     today = date.today()
     attendance = db.query(Attendance).filter(
-        Attendance.employee_id == request.employee_id,
+        Attendance.employee_id == target_emp_id,
         Attendance.date == today
     ).first()
     
@@ -70,8 +92,14 @@ def get_attendance_records(
     employee_id: Optional[int] = None,
     month: Optional[int] = None,
     year: Optional[int] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_employee: Employee = Depends(get_current_employee)
 ):
+    # Enforce data isolation
+    if current_user.role.value in ["employee", "manager"]:
+        employee_id = current_employee.id
+
     query = db.query(Attendance)
     if employee_id:
         query = query.filter(Attendance.employee_id == employee_id)
@@ -93,7 +121,19 @@ def get_attendance_records(
 
 
 @router.get("/summary/{employee_id}")
-def get_attendance_summary(employee_id: int, month: int, year: int, db: Session = Depends(get_db)):
+def get_attendance_summary(
+    employee_id: int,
+    month: int,
+    year: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_employee: Employee = Depends(get_current_employee)
+):
+    # Enforce data isolation
+    if current_user.role.value in ["employee", "manager"]:
+        if employee_id != current_employee.id:
+            raise HTTPException(status_code=403, detail="Forbidden: You can only query your own data")
+
     from sqlalchemy import extract
     records = db.query(Attendance).filter(
         Attendance.employee_id == employee_id,
@@ -121,8 +161,18 @@ def get_attendance_summary(employee_id: int, month: int, year: int, db: Session 
 
 # ===== LEAVES =====
 @router.post("/leaves/", response_model=LeaveRequestResponse)
-def apply_leave(request: LeaveRequestCreate, db: Session = Depends(get_db)):
-    emp = db.query(Employee).filter(Employee.id == request.employee_id).first()
+def apply_leave(
+    request: LeaveRequestCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_employee: Employee = Depends(get_current_employee)
+):
+    # Enforce data isolation
+    target_emp_id = request.employee_id
+    if current_user.role.value in ["employee", "manager"]:
+        target_emp_id = current_employee.id
+
+    emp = db.query(Employee).filter(Employee.id == target_emp_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
     
@@ -137,8 +187,11 @@ def apply_leave(request: LeaveRequestCreate, db: Session = Depends(get_db)):
     elif request.leave_type == "earned" and emp.earned_leave_balance < days:
         raise HTTPException(status_code=400, detail="Insufficient earned leave balance")
     
+    leave_data = request.model_dump()
+    leave_data["employee_id"] = target_emp_id
+
     leave = LeaveRequest(
-        **request.model_dump(),
+        **leave_data,
         days=days,
     )
     db.add(leave)
@@ -154,8 +207,14 @@ def apply_leave(request: LeaveRequestCreate, db: Session = Depends(get_db)):
 def list_leaves(
     employee_id: Optional[int] = None,
     status: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_employee: Employee = Depends(get_current_employee)
 ):
+    # Enforce data isolation
+    if current_user.role.value in ["employee", "manager"]:
+        employee_id = current_employee.id
+
     query = db.query(LeaveRequest)
     if employee_id:
         query = query.filter(LeaveRequest.employee_id == employee_id)
@@ -173,7 +232,12 @@ def list_leaves(
 
 
 @router.put("/leaves/{leave_id}", response_model=LeaveRequestResponse)
-def update_leave(leave_id: int, request: LeaveRequestUpdate, db: Session = Depends(get_db)):
+def update_leave(
+    leave_id: int,
+    request: LeaveRequestUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "hr")) # Strict leave approval enforcement!
+):
     leave = db.query(LeaveRequest).filter(LeaveRequest.id == leave_id).first()
     if not leave:
         raise HTTPException(status_code=404, detail="Leave request not found")
@@ -206,7 +270,17 @@ def update_leave(leave_id: int, request: LeaveRequestUpdate, db: Session = Depen
 
 
 @router.get("/leaves/balance/{employee_id}")
-def get_leave_balance(employee_id: int, db: Session = Depends(get_db)):
+def get_leave_balance(
+    employee_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_employee: Employee = Depends(get_current_employee)
+):
+    # Enforce data isolation
+    if current_user.role.value in ["employee", "manager"]:
+        if employee_id != current_employee.id:
+            raise HTTPException(status_code=403, detail="Forbidden: You can only query your own data")
+
     emp = db.query(Employee).filter(Employee.id == employee_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")

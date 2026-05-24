@@ -7,7 +7,7 @@ from app.config import settings
 engine = create_engine(
     settings.DATABASE_URL,
     connect_args={"check_same_thread": False},  # SQLite specific
-    echo=settings.DEBUG,
+    echo=False,
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -29,4 +29,11 @@ def get_db():
 
 def create_tables():
     """Create all database tables."""
+    # Import all models so SQLAlchemy registers them before create_all
+    from app.models import (  # noqa
+        user, employee, job, candidate, interview,
+        attendance, payroll, performance, offboarding,
+        document, expense, face_attendance,
+        notification, onboarding, engagement, workflow, skills,
+    )
     Base.metadata.create_all(bind=engine)

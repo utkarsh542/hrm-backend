@@ -4,13 +4,14 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import Optional
+from pydantic import BaseModel
 
 from app.database import get_db
 from app.models.interview import Interview, InterviewType, InterviewStatus
 from app.models.candidate import Candidate, Application, ApplicationStatus
 from app.models.job import Job
 from app.schemas.schemas import InterviewCreate, InterviewUpdate, InterviewResponse
-from app.services.ai_service import generate_interview_questions, evaluate_interview
+from app.services.ai_service import generate_interview_questions, evaluate_interview, _chat, _AI_ENABLED
 
 router = APIRouter(prefix="/api/interviews", tags=["Interviews"])
 
@@ -145,3 +146,119 @@ def get_interview_questions(interview_id: int, db: Session = Depends(get_db)):
         job.skills if job else ""
     )
     return {"questions": questions}
+
+
+# ─── Live AI Interview Session ──────────────────────────────────────────────
+
+class StartSessionRequest(BaseModel):
+    interview_type: str = "technical"
+
+class AnswerRequest(BaseModel):
+    interview_id: int
+    question_index: int
+    question: str
+    answer: str
+    job_title: str = ""
+
+class FinalEvalRequest(BaseModel):
+    interview_id: int
+    qa_pairs: list  # [{question, answer}, ...]
+    job_title: str = ""
+
+
+@router.post("/{interview_id}/start-session")
+def start_live_session(interview_id: int, db: Session = Depends(get_db)):
+    """Start a live AI interview session — generate questions and mark in_progress."""
+    interview = db.query(Interview).filter(Interview.id == interview_id).first()
+    if not interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+
+    job = db.query(Job).filter(Job.id == interview.job_id).first()
+    candidate = db.query(Candidate).filter(Candidate.id == interview.candidate_id).first()
+
+    job_title = job.title if job else "Software Engineer"
+    skills = job.skills if job else ""
+
+    questions = generate_interview_questions(job_title, interview.interview_type.value, skills)
+
+    interview.ai_questions = json.dumps(questions)
+    interview.status = InterviewStatus.IN_PROGRESS
+    db.commit()
+
+    return {
+        "interview_id": interview_id,
+        "candidate_name": candidate.full_name if candidate else "",
+        "job_title": job_title,
+        "interview_type": interview.interview_type.value,
+        "questions": questions,
+        "total_questions": len(questions),
+    }
+
+
+@router.post("/evaluate-answer")
+def evaluate_single_answer(req: AnswerRequest):
+    """Evaluate a single answer in real-time and return instant feedback."""
+    if not req.answer.strip():
+        return {"score": 2.0, "feedback": "No answer provided.", "follow_up": None}
+
+    if _AI_ENABLED:
+        result = _chat(
+            f"""You are conducting a {req.job_title} interview.
+
+Question: {req.question}
+Candidate's Answer: {req.answer}
+
+Evaluate this answer and return JSON:
+{{
+  "score": <1.0-5.0>,
+  "feedback": "<1-2 sentence specific feedback on this answer>",
+  "follow_up": "<optional follow-up question if answer needs clarification, or null>",
+  "keywords_detected": ["<key concepts mentioned>"]
+}}""",
+            system="You are an expert technical interviewer. Be concise and specific."
+        )
+        if result and "score" in result:
+            return {
+                "score": max(1.0, min(5.0, float(result.get("score", 3.0)))),
+                "feedback": result.get("feedback", ""),
+                "follow_up": result.get("follow_up"),
+                "keywords_detected": result.get("keywords_detected", []),
+            }
+
+    # Fallback: length-based heuristic
+    words = len(req.answer.split())
+    score = 4.0 if words > 50 else 3.0 if words > 20 else 2.0
+    return {"score": score, "feedback": "Answer recorded.", "follow_up": None, "keywords_detected": []}
+
+
+@router.post("/final-evaluation")
+def final_evaluation(req: FinalEvalRequest, db: Session = Depends(get_db)):
+    """Run final AI evaluation after all questions answered."""
+    interview = db.query(Interview).filter(Interview.id == req.interview_id).first()
+    if not interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+
+    questions = [p["question"] for p in req.qa_pairs]
+    responses = [p["answer"] for p in req.qa_pairs]
+    q_dicts = [{"question": q, "category": "mixed"} for q in questions]
+
+    evaluation = evaluate_interview(responses, q_dicts)
+
+    # Persist to DB
+    interview.ai_responses = json.dumps(req.qa_pairs)
+    interview.ai_score = evaluation["overall_score"]
+    interview.ai_feedback = evaluation["feedback"]
+    interview.status = InterviewStatus.COMPLETED
+    interview.technical_score = evaluation["scores"].get("technical_knowledge")
+    interview.communication_score = evaluation["scores"].get("communication")
+    interview.cultural_fit_score = evaluation["scores"].get("cultural_fit")
+    interview.overall_score = evaluation["overall_score"]
+    interview.recommendation = evaluation["recommendation"]
+    db.commit()
+
+    return {
+        "interview_id": req.interview_id,
+        "evaluation": evaluation,
+        "recommendation": evaluation["recommendation"],
+        "overall_score": evaluation["overall_score"],
+    }

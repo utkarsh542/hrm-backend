@@ -6,8 +6,8 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
-    APP_NAME: str = "HRMS - HR Management System"
-    APP_VERSION: str = "1.0.0"
+    APP_NAME: str = "HRMS - AI-Powered HR Management System"
+    APP_VERSION: str = "2.0.0"
     DEBUG: bool = True
     
     # Database
@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "uploads"
     GENERATED_DIR: str = "generated"
     MAX_FILE_SIZE: int = 10 * 1024 * 1024  # 10 MB
+    
+    # AI — Google Gemini (free tier)
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-2.0-flash"
     
     # Company defaults
     COMPANY_NAME: str = "TechCorp Solutions Pvt. Ltd."
@@ -40,3 +44,6 @@ settings = Settings()
 # Ensure directories exist
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 os.makedirs(settings.GENERATED_DIR, exist_ok=True)
+os.makedirs(os.path.join(settings.UPLOAD_DIR, "documents"), exist_ok=True)
+os.makedirs(os.path.join(settings.UPLOAD_DIR, "receipts"), exist_ok=True)
+os.makedirs(os.path.join(settings.UPLOAD_DIR, "resumes"), exist_ok=True)

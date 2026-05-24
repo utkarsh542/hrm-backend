@@ -48,6 +48,12 @@ class PerformanceReview(Base):
     strengths = Column(Text, nullable=True)
     improvements = Column(Text, nullable=True)
     recommendation = Column(String, nullable=True)  # promote, increment, pip, no_change
+    # 360° Feedback
+    peer_feedback = Column(Text, nullable=True)       # JSON list of peer comments
+    peer_rating = Column(Float, nullable=True)         # avg peer rating
+    subordinate_feedback = Column(Text, nullable=True) # JSON
+    subordinate_rating = Column(Float, nullable=True)
+    ai_review_draft = Column(Text, nullable=True)      # AI-generated review draft
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

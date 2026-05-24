@@ -242,6 +242,7 @@ class EmployeeResponse(BaseModel):
     sick_leave_balance: float
     earned_leave_balance: float
     onboarding_status: str
+    reporting_manager_id: Optional[int] = None
     avatar_url: Optional[str]
     is_active: bool
     created_at: dt.datetime

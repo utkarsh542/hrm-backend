@@ -5,12 +5,18 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import create_tables
-from app.routers import auth, dashboard, jobs, candidates, interviews, employees, attendance, payroll, performance, offboarding
+from app.routers import (
+    auth, dashboard, jobs, candidates, interviews, employees,
+    attendance, payroll, performance, offboarding, ai_copilot,
+    documents, expenses, face_attendance, benchmarking,
+    notifications, search, onboarding, engagement, workflows,
+    skills, analytics, resume,
+)
 
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="Enterprise HR Management System — Full Automation Platform",
+    description="AI-Powered HR Automation Platform — Next-Gen HRMS",
     docs_url="/docs",
     redoc_url="/redoc",
 )
@@ -28,7 +34,7 @@ app.add_middleware(
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 app.mount("/generated", StaticFiles(directory=settings.GENERATED_DIR), name="generated")
 
-# Include all routers
+# Include all routers — Core
 app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(jobs.router)
@@ -39,12 +45,29 @@ app.include_router(attendance.router)
 app.include_router(payroll.router)
 app.include_router(performance.router)
 app.include_router(offboarding.router)
+app.include_router(ai_copilot.router)
+app.include_router(documents.router)
+app.include_router(expenses.router)
+app.include_router(face_attendance.router)
+app.include_router(benchmarking.router)
+# Include all routers — New AI-Powered Features
+app.include_router(notifications.router)
+app.include_router(search.router)
+app.include_router(onboarding.router)
+app.include_router(engagement.router)
+app.include_router(workflows.router)
+app.include_router(skills.router)
+app.include_router(analytics.router)
+app.include_router(resume.router)
 
 
 @app.on_event("startup")
 def startup():
+    # Import all models so SQLAlchemy registers them before create_tables
+    from app.models import user, employee, job, candidate, interview, attendance, payroll, performance, offboarding, document, expense, face_attendance  # noqa
     create_tables()
     seed_demo_data()
+    fix_manager_relationships()
 
 
 @app.get("/api/health")
@@ -55,6 +78,8 @@ def health():
 def seed_demo_data():
     """Seed the database with demo data for immediate use."""
     from app.database import SessionLocal
+    from app.models.expense import Expense
+    from app.models.face_attendance import FaceAttendance
     from app.models.user import User, UserRole
     from app.models.employee import Employee, Department
     from app.models.job import Job, JobStatus, JobType
@@ -121,13 +146,21 @@ def seed_demo_data():
             ("Karthik Raman", "karthik@techcorp.com", "M", 4, "Sales Executive", 700000, "2024-03-01"),
         ]
         
+        # Map user email/role to user ID by full name
+        user_map = {u.full_name: u for u in users}
+        
         employees = []
         for i, (name, email, gender, dept_id, desig, ctc, join_date) in enumerate(emp_data):
             breakup = calculate_salary_breakup(ctc)
+            matched_user = user_map.get(name)
+            user_id = matched_user.id if matched_user else None
+            emp_email = matched_user.email if matched_user else email
+            
             emp = Employee(
+                user_id=user_id,
                 employee_id=f"EMP{i+1:04d}",
                 full_name=name,
-                email=email,
+                email=emp_email,
                 phone=f"+91-98{random.randint(10000000, 99999999)}",
                 gender=gender,
                 date_of_birth=date(1985 + random.randint(0, 15), random.randint(1, 12), random.randint(1, 28)),
@@ -329,5 +362,57 @@ def seed_demo_data():
     except Exception as e:
         db.rollback()
         print(f"[WARN] Seed error (may already exist): {e}")
+    finally:
+        db.close()
+
+
+def fix_manager_relationships():
+    """Fix manager relationships for existing seeded employees in-place on startup."""
+    from app.database import SessionLocal
+    from app.models.employee import Employee
+    
+    db = SessionLocal()
+    try:
+        employees = db.query(Employee).all()
+        # If any employee already has a reporting manager, we assume they are configured
+        if any(emp.reporting_manager_id is not None for emp in employees):
+            db.close()
+            return
+            
+        emp_map = {e.full_name: e for e in employees}
+        
+        # Engineering Hierarchy
+        vp = emp_map.get("Rajesh Kumar")
+        tl = emp_map.get("Amit Patel")
+        
+        if tl and vp:
+            tl.reporting_manager_id = vp.id
+            
+        eng_staff = ["Sneha Reddy", "Rahul Verma", "Meera Krishnan", "Rohan Desai"]
+        for name in eng_staff:
+            e = emp_map.get(name)
+            if e and tl:
+                e.reporting_manager_id = tl.id
+                
+        # HR Hierarchy
+        hr_dir = emp_map.get("Priya Sharma")
+        hr_exec = emp_map.get("Pooja Aggarwal")
+        if hr_dir and vp:
+            hr_dir.reporting_manager_id = vp.id
+        if hr_exec and hr_dir:
+            hr_exec.reporting_manager_id = hr_dir.id
+            
+        # Sales Hierarchy
+        sales_mgr = emp_map.get("Vikram Singh")
+        sales_exec = emp_map.get("Karthik Raman")
+        if sales_mgr and vp:
+            sales_mgr.reporting_manager_id = vp.id
+        if sales_exec and sales_mgr:
+            sales_exec.reporting_manager_id = sales_mgr.id
+            
+        db.commit()
+        print("[OK] Manager relationships configured successfully in existing database!")
+    except Exception as e:
+        print(f"Error fixing manager relationships: {e}")
     finally:
         db.close()

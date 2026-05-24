@@ -11,22 +11,40 @@ from app.models.employee import Employee, Department, EmploymentStatus
 from app.schemas.schemas import ResignationCreate, ResignationUpdate, ResignationResponse
 from app.services.pdf_service import generate_experience_letter_pdf, generate_relieving_letter_pdf
 from app.config import settings
+from app.services.auth_service import get_current_user
+from app.models.user import User
 
 router = APIRouter(prefix="/api/offboarding", tags=["Offboarding"])
 
 
 @router.get("/resignations", response_model=list[ResignationResponse])
-def list_resignations(db: Session = Depends(get_db)):
-    resignations = db.query(Resignation).order_by(Resignation.created_at.desc()).all()
+def list_resignations(
+    current_user: "User" = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # Resolve current employee record
+    emp = db.query(Employee).filter(Employee.user_id == current_user.id).first()
+    if not emp:
+        emp = db.query(Employee).filter(Employee.email == current_user.email).first()
+
+    # Isolate queries based on user role
+    if current_user.role.value in ["admin", "hr"]:
+        resignations = db.query(Resignation).order_by(Resignation.created_at.desc()).all()
+    else:
+        if emp:
+            resignations = db.query(Resignation).filter(Resignation.employee_id == emp.id).order_by(Resignation.created_at.desc()).all()
+        else:
+            resignations = []
+
     result = []
     for r in resignations:
-        emp = db.query(Employee).filter(Employee.id == r.employee_id).first()
-        dept = db.query(Department).filter(Department.id == emp.department_id).first() if emp else None
+        emp_rec = db.query(Employee).filter(Employee.id == r.employee_id).first()
+        dept = db.query(Department).filter(Department.id == emp_rec.department_id).first() if emp_rec else None
         resp = ResignationResponse.model_validate(r)
-        resp.employee_name = emp.full_name if emp else ""
-        resp.employee_code = emp.employee_id if emp else ""
+        resp.employee_name = emp_rec.full_name if emp_rec else ""
+        resp.employee_code = emp_rec.employee_id if emp_rec else ""
         resp.department = dept.name if dept else ""
-        resp.designation = emp.designation if emp else ""
+        resp.designation = emp_rec.designation if emp_rec else ""
         result.append(resp)
     return result
 
@@ -195,6 +213,12 @@ def complete_offboarding(resignation_id: int, db: Session = Depends(get_db)):
     if emp:
         emp.employment_status = EmploymentStatus.RESIGNED
         emp.is_active = False
+        
+        # Suspend associated login User account
+        from app.models.user import User
+        user = db.query(User).filter((User.id == emp.user_id) | (User.email == emp.email)).first()
+        if user:
+            user.is_active = False
     
     db.commit()
     return {"message": "Offboarding completed successfully"}
