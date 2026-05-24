@@ -24,3 +24,11 @@ env/
 # OS
 Thumbs.db
 .DS_Store
+
+generated/
+
+# Uploads
+uploads/
+
+# PDFs (optional)
+*.pdf
