@@ -34,6 +34,6 @@ def create_tables():
         user, employee, job, candidate, interview,
         attendance, payroll, performance, offboarding,
         document, expense, face_attendance,
-        notification, onboarding, engagement, workflow, skills,
+        notification, onboarding, engagement, workflow, skills, activity,
     )
     Base.metadata.create_all(bind=engine)

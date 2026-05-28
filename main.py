@@ -10,7 +10,7 @@ from app.routers import (
     attendance, payroll, performance, offboarding, ai_copilot,
     documents, expenses, face_attendance, benchmarking,
     notifications, search, onboarding, engagement, workflows,
-    skills, analytics, resume,
+    skills, analytics, resume, activities,
 )
 
 app = FastAPI(
@@ -28,6 +28,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    max_age=600,
 )
 
 # Static files for uploads and generated docs
@@ -59,6 +60,7 @@ app.include_router(workflows.router)
 app.include_router(skills.router)
 app.include_router(analytics.router)
 app.include_router(resume.router)
+app.include_router(activities.router)
 
 
 @app.on_event("startup")

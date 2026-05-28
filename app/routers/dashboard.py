@@ -56,9 +56,16 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
 def get_department_stats(db: Session = Depends(get_db)):
     from app.models.employee import Department
     departments = db.query(Department).all()
+    
+    # Calculate all counts in a single query using group_by
+    counts = db.query(Employee.department_id, func.count(Employee.id))\
+        .filter(Employee.is_active == True)\
+        .group_by(Employee.department_id).all()
+    count_map = {dept_id: count for dept_id, count in counts}
+    
     result = []
     for dept in departments:
-        count = db.query(Employee).filter(Employee.department_id == dept.id, Employee.is_active == True).count()
+        count = count_map.get(dept.id, 0)
         result.append(DepartmentStats(name=dept.name, count=count))
     return result
 
@@ -87,40 +94,55 @@ def get_recent_activity(db: Session = Depends(get_db)):
     # Recent applications
     recent_apps = db.query(Application).order_by(Application.applied_at.desc()).limit(5).all()
     from app.models.candidate import Candidate
-    for app in recent_apps:
-        candidate = db.query(Candidate).filter(Candidate.id == app.candidate_id).first()
-        job = db.query(Job).filter(Job.id == app.job_id).first()
-        if candidate and job:
-            activities.append(RecentActivity(
-                id=app.id,
-                type="application",
-                message=f"{candidate.full_name} applied for {job.title}",
-                timestamp=app.applied_at,
-            ))
+    
+    if recent_apps:
+        cand_ids = [app.candidate_id for app in recent_apps]
+        job_ids = [app.job_id for app in recent_apps]
+        candidates = {c.id: c for c in db.query(Candidate).filter(Candidate.id.in_(cand_ids)).all()}
+        jobs = {j.id: j for j in db.query(Job).filter(Job.id.in_(job_ids)).all()}
+        
+        for app in recent_apps:
+            candidate = candidates.get(app.candidate_id)
+            job = jobs.get(app.job_id)
+            if candidate and job:
+                activities.append(RecentActivity(
+                    id=app.id,
+                    type="application",
+                    message=f"{candidate.full_name} applied for {job.title}",
+                    timestamp=app.applied_at,
+                ))
     
     # Recent interviews
     recent_interviews = db.query(Interview).order_by(Interview.created_at.desc()).limit(3).all()
-    for interview in recent_interviews:
-        candidate = db.query(Candidate).filter(Candidate.id == interview.candidate_id).first()
-        if candidate:
-            activities.append(RecentActivity(
-                id=interview.id,
-                type="interview",
-                message=f"Interview scheduled with {candidate.full_name}",
-                timestamp=interview.created_at,
-            ))
+    if recent_interviews:
+        cand_ids = [interview.candidate_id for interview in recent_interviews]
+        candidates = {c.id: c for c in db.query(Candidate).filter(Candidate.id.in_(cand_ids)).all()}
+        
+        for interview in recent_interviews:
+            candidate = candidates.get(interview.candidate_id)
+            if candidate:
+                activities.append(RecentActivity(
+                    id=interview.id,
+                    type="interview",
+                    message=f"Interview scheduled with {candidate.full_name}",
+                    timestamp=interview.created_at,
+                ))
     
     # Recent leaves
     recent_leaves = db.query(LeaveRequest).order_by(LeaveRequest.created_at.desc()).limit(3).all()
-    for leave in recent_leaves:
-        emp = db.query(Employee).filter(Employee.id == leave.employee_id).first()
-        if emp:
-            activities.append(RecentActivity(
-                id=leave.id,
-                type="leave",
-                message=f"{emp.full_name} requested {leave.leave_type.value} leave",
-                timestamp=leave.created_at,
-            ))
+    if recent_leaves:
+        emp_ids = [leave.employee_id for leave in recent_leaves]
+        employees = {e.id: e for e in db.query(Employee).filter(Employee.id.in_(emp_ids)).all()}
+        
+        for leave in recent_leaves:
+            emp = employees.get(leave.employee_id)
+            if emp:
+                activities.append(RecentActivity(
+                    id=leave.id,
+                    type="leave",
+                    message=f"{emp.full_name} requested {leave.leave_type.value} leave",
+                    timestamp=leave.created_at,
+                ))
     
     activities.sort(key=lambda x: x.timestamp, reverse=True)
     return activities[:10]

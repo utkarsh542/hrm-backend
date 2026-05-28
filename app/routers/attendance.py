@@ -111,11 +111,15 @@ def get_attendance_records(
         )
     
     records = query.order_by(Attendance.date.desc()).all()
+    
+    # Pre-fetch all employees to avoid N+1 queries in loop
+    employees = db.query(Employee).all()
+    emp_map = {e.id: e.full_name for e in employees}
+    
     result = []
     for r in records:
-        emp = db.query(Employee).filter(Employee.id == r.employee_id).first()
         resp = AttendanceResponse.model_validate(r)
-        resp.employee_name = emp.full_name if emp else ""
+        resp.employee_name = emp_map.get(r.employee_id, "")
         result.append(resp)
     return result
 
@@ -197,7 +201,55 @@ def apply_leave(
     db.add(leave)
     db.commit()
     db.refresh(leave)
-    
+
+    # Trigger Leave Pending Notifications for Managers & HR
+    try:
+        from app.routers.notifications import create_notification
+        from app.services.email_service import send_leave_notification
+        
+        # 1. Notify Reporting Manager (if set)
+        if emp.reporting_manager_id:
+            mgr = db.query(Employee).filter(Employee.id == emp.reporting_manager_id).first()
+            if mgr and mgr.user_id:
+                create_notification(
+                    db=db,
+                    user_id=mgr.user_id,
+                    title="Leave Request Pending Action",
+                    message=f"{emp.full_name} has requested {days} day(s) of {request.leave_type} leave. Review required.",
+                    type="action",
+                    link="/approvals"
+                )
+                # Send email notification
+                send_leave_notification(
+                    to_email=mgr.email,
+                    employee_name=emp.full_name,
+                    leave_type=request.leave_type,
+                    start_date=str(request.start_date),
+                    end_date=str(request.end_date),
+                    days=days,
+                    reason=request.reason or "No reason provided."
+                )
+
+        # 2. Notify all HR & Admin accounts in database
+        from app.models.user import User, UserRole
+        privileged_users = db.query(User).filter(User.role.in_([UserRole.ADMIN, UserRole.HR])).all()
+        for p_user in privileged_users:
+            # Avoid duplicate manager alerts
+            if emp.reporting_manager_id and mgr and p_user.id == mgr.user_id:
+                continue
+            create_notification(
+                db=db,
+                user_id=p_user.id,
+                title="Leave Applied (Admin Alert)",
+                message=f"{emp.full_name} has submitted a leave request for {days} day(s). Review required.",
+                type="info",
+                link="/approvals"
+            )
+    except Exception as e:
+        import logging
+        logger = logging.getLogger("uvicorn")
+        logger.error(f"Error in leave application notifications: {e}")
+        
     resp = LeaveRequestResponse.model_validate(leave)
     resp.employee_name = emp.full_name
     return resp
@@ -222,11 +274,15 @@ def list_leaves(
         query = query.filter(LeaveRequest.status == LeaveStatus(status))
     
     leaves = query.order_by(LeaveRequest.created_at.desc()).all()
+    
+    # Pre-fetch all employees to avoid N+1 queries in loop
+    employees = db.query(Employee).all()
+    emp_map = {e.id: e.full_name for e in employees}
+    
     result = []
     for l in leaves:
-        emp = db.query(Employee).filter(Employee.id == l.employee_id).first()
         resp = LeaveRequestResponse.model_validate(l)
-        resp.employee_name = emp.full_name if emp else ""
+        resp.employee_name = emp_map.get(l.employee_id, "")
         result.append(resp)
     return result
 
@@ -236,7 +292,7 @@ def update_leave(
     leave_id: int,
     request: LeaveRequestUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "hr")) # Strict leave approval enforcement!
+    current_user: User = Depends(require_roles("admin", "hr", "manager")) # Leave approval enforcement!
 ):
     leave = db.query(LeaveRequest).filter(LeaveRequest.id == leave_id).first()
     if not leave:
@@ -264,6 +320,40 @@ def update_leave(
     db.refresh(leave)
     
     emp = db.query(Employee).filter(Employee.id == leave.employee_id).first()
+    
+    # Trigger Status Update Notifications for the Employee
+    try:
+        from app.routers.notifications import create_notification
+        from app.services.email_service import send_leave_status_update
+        
+        status_str = leave.status.value
+        remarks = leave.rejection_reason if status_str == "rejected" else "Leave request approved."
+        
+        if emp:
+            # 1. Send in-app notification
+            if emp.user_id:
+                create_notification(
+                    db=db,
+                    user_id=emp.user_id,
+                    title=f"Leave Request {status_str.title()}",
+                    message=f"Your {leave.leave_type.value} leave request for {leave.days} day(s) has been {status_str}. Remarks: \"{remarks}\"",
+                    type="success" if status_str == "approved" else "warning",
+                    link="/attendance/leaves"
+                )
+            
+            # 2. Send email notification
+            send_leave_status_update(
+                to_email=emp.email,
+                employee_name=emp.full_name,
+                leave_type=leave.leave_type.value,
+                status=status_str,
+                comments=remarks
+            )
+    except Exception as e:
+        import logging
+        logger = logging.getLogger("uvicorn")
+        logger.error(f"Error in leave status update notifications: {e}")
+        
     resp = LeaveRequestResponse.model_validate(leave)
     resp.employee_name = emp.full_name if emp else ""
     return resp

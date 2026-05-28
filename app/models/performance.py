@@ -29,7 +29,7 @@ class PerformanceReview(Base):
     __tablename__ = "performance_reviews"
 
     id = Column(Integer, primary_key=True, index=True)
-    employee_id = Column(Integer, nullable=False)
+    employee_id = Column(Integer, nullable=False, index=True)
     reviewer_id = Column(Integer, nullable=True)
     cycle = Column(SAEnum(ReviewCycle), default=ReviewCycle.ANNUAL)
     period = Column(String, nullable=True)  # e.g., "Q1 2024", "2024"
@@ -63,7 +63,7 @@ class Goal(Base):
     __tablename__ = "goals"
 
     id = Column(Integer, primary_key=True, index=True)
-    employee_id = Column(Integer, nullable=False)
+    employee_id = Column(Integer, nullable=False, index=True)
     title = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     target_date = Column(DateTime, nullable=True)

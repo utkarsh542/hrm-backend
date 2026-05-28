@@ -9,8 +9,8 @@ class FaceAttendance(Base):
     __table_args__ = {'extend_existing': True}
 
     id            = Column(Integer, primary_key=True, index=True)
-    employee_id   = Column(Integer, nullable=False)
-    date          = Column(Date, nullable=False, default=date.today)
+    employee_id   = Column(Integer, nullable=False, index=True)
+    date          = Column(Date, nullable=False, default=date.today, index=True)
     check_in      = Column(DateTime, nullable=True)
     check_out     = Column(DateTime, nullable=True)
     work_hours    = Column(Float, default=0)

@@ -27,6 +27,18 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.0-flash"
     
+    # AI — OpenRouter Free Tier
+    OPENROUTER_API_KEY: str = ""
+    OPENROUTER_MODEL: str = "openrouter/free"
+    
+    # SMTP Email Settings
+    SMTP_SERVER: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "noreply@techcorp.com"
+
+    
     # Company defaults
     COMPANY_NAME: str = "TechCorp Solutions Pvt. Ltd."
     COMPANY_ADDRESS: str = "123 Tech Park, Bangalore, Karnataka 560001"

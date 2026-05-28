@@ -127,6 +127,28 @@ def create_employee(request: EmployeeCreate, db: Session = Depends(get_db)):
     db.add(employee)
     db.commit()
     db.refresh(employee)
+
+    # Trigger Welcome Email & In-App Notification
+    try:
+        from app.services.email_service import send_welcome_email
+        from app.routers.notifications import create_notification
+        
+        # Send credentials welcome email
+        send_welcome_email(employee.email, employee.full_name, "Welcome@123")
+        
+        # Create real-time welcome in-app notification
+        if employee.user_id:
+            create_notification(
+                db=db,
+                user_id=employee.user_id,
+                title="Welcome to TechCorp!",
+                message=f"Hi {employee.full_name}, your user account has been successfully provisioned. Welcome aboard!",
+                type="success"
+            )
+    except Exception as e:
+        import logging
+        logger = logging.getLogger("uvicorn")
+        logger.error(f"Error in welcome notification triggers: {e}")
     
     dept = db.query(Department).filter(Department.id == employee.department_id).first()
     resp = EmployeeResponse.model_validate(employee)

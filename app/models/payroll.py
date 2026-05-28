@@ -33,8 +33,8 @@ class Payslip(Base):
     __tablename__ = "payslips"
 
     id = Column(Integer, primary_key=True, index=True)
-    payroll_run_id = Column(Integer, nullable=False)
-    employee_id = Column(Integer, nullable=False)
+    payroll_run_id = Column(Integer, nullable=False, index=True)
+    employee_id = Column(Integer, nullable=False, index=True)
     month = Column(Integer, nullable=False)
     year = Column(Integer, nullable=False)
     

@@ -69,6 +69,68 @@ def submit_resignation(request: ResignationCreate, db: Session = Depends(get_db)
     db.add(resignation)
     db.commit()
     db.refresh(resignation)
+
+    # Trigger Notifications & Email Alerts
+    try:
+        from app.services.email_service import send_resignation_notification
+        from app.routers.notifications import create_notification
+        from app.models.user import UserRole
+        
+        # 1. Notify reporting manager
+        if emp.reporting_manager_id:
+            mgr = db.query(Employee).filter(Employee.id == emp.reporting_manager_id).first()
+            if mgr:
+                # In-app notification for manager
+                if mgr.user_id:
+                    create_notification(
+                        db=db,
+                        user_id=mgr.user_id,
+                        title="Resignation Submitted",
+                        message=f"{emp.full_name} has submitted their resignation proposal.",
+                        type="action",
+                        link="/offboarding"
+                    )
+                # Email alert for manager
+                if mgr.email:
+                    send_resignation_notification(
+                        to_email=mgr.email,
+                        employee_name=emp.full_name,
+                        notice_days=request.notice_period_days,
+                        lwd=lwd.strftime("%Y-%m-%d"),
+                        reason=request.reason
+                    )
+                    
+        # 2. Notify all Admins and HR accounts
+        admins_hrs = db.query(User).filter(User.role.in_([UserRole.ADMIN, UserRole.HR])).all()
+        for user_acc in admins_hrs:
+            # Prevent double notification if manager is also admin/hr
+            if emp.reporting_manager_id:
+                mgr = db.query(Employee).filter(Employee.id == emp.reporting_manager_id).first()
+                if mgr and mgr.user_id == user_acc.id:
+                    continue
+            
+            # In-app notification
+            create_notification(
+                db=db,
+                user_id=user_acc.id,
+                title="Resignation Alert",
+                message=f"{emp.full_name} has submitted their resignation.",
+                type="action",
+                link="/offboarding"
+            )
+            # Email alert
+            if user_acc.email:
+                send_resignation_notification(
+                    to_email=user_acc.email,
+                    employee_name=emp.full_name,
+                    notice_days=request.notice_period_days,
+                    lwd=lwd.strftime("%Y-%m-%d"),
+                    reason=request.reason
+                )
+    except Exception as e:
+        import logging
+        logger = logging.getLogger("uvicorn")
+        logger.error(f"Error in resignation offboarding notification triggers: {e}")
     
     dept = db.query(Department).filter(Department.id == emp.department_id).first()
     resp = ResignationResponse.model_validate(resignation)
@@ -221,4 +283,35 @@ def complete_offboarding(resignation_id: int, db: Session = Depends(get_db)):
             user.is_active = False
     
     db.commit()
+
+    # Trigger offboarding complete email and notification
+    if emp:
+        try:
+            from app.services.email_service import send_offboarding_completion_email
+            from app.routers.notifications import create_notification
+            
+            # Send in-app notification to employee
+            if emp.user_id:
+                create_notification(
+                    db=db,
+                    user_id=emp.user_id,
+                    title="Offboarding Complete",
+                    message="Your offboarding process has been completed and final settlement cleared. Thank you for your service!",
+                    type="success"
+                )
+            
+            # Send completion email to employee
+            lwd_str = resignation.last_working_day.strftime("%B %d, %Y") if resignation.last_working_day else "N/A"
+            send_offboarding_completion_email(
+                to_email=emp.email,
+                name=emp.full_name,
+                lwd=lwd_str,
+                total_settlement=resignation.total_settlement or 0.0,
+                exit_interview_done=bool(resignation.exit_interview_done)
+            )
+        except Exception as e:
+            import logging
+            logger = logging.getLogger("uvicorn")
+            logger.error(f"Error in offboarding completion notification: {e}")
+            
     return {"message": "Offboarding completed successfully"}

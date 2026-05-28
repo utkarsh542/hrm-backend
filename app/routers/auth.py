@@ -86,6 +86,28 @@ def change_password(
     # Update password
     current_user.hashed_password = hash_password(request.new_password)
     db.commit()
+    
+    # Trigger security confirmation alerts
+    try:
+        from app.services.email_service import send_password_change_alert
+        from app.routers.notifications import create_notification
+        
+        # Send security email
+        send_password_change_alert(current_user.email, current_user.full_name)
+        
+        # Insert real-time warning in-app notification
+        create_notification(
+            db=db,
+            user_id=current_user.id,
+            title="Password Changed Successfully",
+            message="Your account login password has been changed. If you did not make this change, please alert HR immediately.",
+            type="warning"
+        )
+    except Exception as e:
+        import logging
+        logger = logging.getLogger("uvicorn")
+        logger.error(f"Error in password change alerts: {e}")
+        
     return {"message": "Password updated successfully"}
 
 
@@ -109,5 +131,27 @@ def reset_password_admin(
     # Reset to default Welcome@123
     user.hashed_password = hash_password("Welcome@123")
     db.commit()
+    
+    # Trigger reset alerts
+    try:
+        from app.services.email_service import send_password_reset_alert
+        from app.routers.notifications import create_notification
+        
+        # Send temporary credentials email
+        send_password_reset_alert(user.email, user.full_name, "Welcome@123")
+        
+        # Create in-app notification for the reset recipient
+        create_notification(
+            db=db,
+            user_id=user.id,
+            title="Password Reset by Admin",
+            message="An administrator has reset your login password to the secure temporary default: Welcome@123.",
+            type="info"
+        )
+    except Exception as e:
+        import logging
+        logger = logging.getLogger("uvicorn")
+        logger.error(f"Error in password reset alerts: {e}")
+        
     return {"message": f"Password reset to Welcome@123 successfully for {user.full_name}"}
 

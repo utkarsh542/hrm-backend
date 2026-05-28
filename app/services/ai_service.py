@@ -6,71 +6,127 @@ Falls back to rule-based logic when no API key is set.
 import os
 import json
 import random
+import hashlib
 from datetime import date
 from typing import List, Dict, Optional
+import urllib.request
+import urllib.error
 
 from app.config import settings
 
-# ── Gemini client setup ─────────────────────────────────────────
+# ── OpenRouter Free LLM setup ─────────────────────────────────────────
 _AI_ENABLED = False
-_client = None
+_OPENROUTER_KEY = settings.OPENROUTER_API_KEY or os.environ.get("OPENROUTER_API_KEY", "")
+_MODEL = settings.OPENROUTER_MODEL or os.environ.get("OPENROUTER_MODEL", "meta-llama/llama-3-8b-instruct:free")
 
-try:
-    from google import genai
-    _api_key = settings.GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY", "")
-    if _api_key:
-        _client = genai.Client(api_key=_api_key)
-        _AI_ENABLED = True
-        print("[AI] Gemini AI enabled (model: gemini-2.0-flash)")
-    else:
-        print("[AI] No GEMINI_API_KEY — running in rule-based fallback mode")
-except Exception as e:
-    print(f"[AI] Gemini init error: {e} — falling back to rules")
+# Persistent Cache Configuration
+_CACHE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "ai_cache.json")
 
-_MODEL = settings.GEMINI_MODEL if hasattr(settings, 'GEMINI_MODEL') else "gemini-2.0-flash"
+def _load_cache() -> dict:
+    try:
+        if os.path.exists(_CACHE_FILE):
+            with open(_CACHE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"[AI] Error loading persistent cache: {e}")
+    return {}
+
+def _save_cache(cache: dict):
+    try:
+        with open(_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(cache, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[AI] Error saving persistent cache: {e}")
+
+_AI_CACHE = _load_cache()
+
+if _OPENROUTER_KEY:
+    _AI_ENABLED = True
+    print(f"[AI] OpenRouter Free LLM enabled (model: {_MODEL})")
+else:
+    print("[AI] No OPENROUTER_API_KEY — running in rule-based fallback mode")
+
+
+def _call_openrouter(prompt: str, system: str, max_tokens: int = 1024, json_mode: bool = False) -> str:
+    """Send request to OpenRouter API with Exact Cache layer."""
+    if not _AI_ENABLED or not _OPENROUTER_KEY:
+        return ""
+    
+    # Calculate exact cache key based on stable cryptographic hash of request parameters
+    cache_str = f"{prompt}:{system}:{max_tokens}:{json_mode}"
+    cache_key = hashlib.md5(cache_str.encode("utf-8")).hexdigest()
+    if cache_key in _AI_CACHE:
+        print("[AI] Exact Cache Hit — returning cached completion instantly (0ms)")
+        return _AI_CACHE[cache_key]
+    
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {_OPENROUTER_KEY}",
+        "HTTP-Referer": "http://localhost:3000",
+        "X-Title": "TechCorp HRMS",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "model": _MODEL,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.3 if json_mode else 0.4,
+        "max_tokens": max_tokens
+    }
+        
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(data).encode("utf-8"),
+        headers=headers,
+        method="POST"
+    )
+    
+    try:
+        with urllib.request.urlopen(req, timeout=15) as response:
+            res = json.loads(response.read().decode("utf-8"))
+            if "choices" in res and len(res["choices"]) > 0:
+                content = res["choices"][0]["message"]["content"].strip()
+                if content:
+                    _AI_CACHE[cache_key] = content
+                    _save_cache(_AI_CACHE)
+                return content
+            return ""
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode("utf-8") if e.fp else ""
+        print(f"[AI] OpenRouter HTTP Error {e.code}: {err_body}")
+        if e.code == 429:
+            raise Exception("429 RESOURCE_EXHAUSTED: OpenRouter rate limit exceeded.")
+        raise Exception(f"OpenRouter HTTP {e.code}: {e.reason}")
+    except Exception as e:
+        print(f"[AI] OpenRouter error: {e}")
+        raise e
 
 
 def _chat(prompt: str, system: str = "You are an expert HR AI assistant. Always respond with valid JSON only. No markdown formatting, no code fences, just raw JSON.", max_tokens: int = 1024) -> dict:
-    """Call Gemini and parse JSON response."""
-    if not _AI_ENABLED or not _client:
-        return {}
+    """Call OpenRouter and parse JSON response."""
     try:
-        response = _client.models.generate_content(
-            model=_MODEL,
-            contents=f"{system}\n\n{prompt}",
-            config={
-                "temperature": 0.3,
-                "max_output_tokens": max_tokens,
-                "response_mime_type": "application/json",
-            },
-        )
-        text = response.text.strip()
+        text = _call_openrouter(prompt, system, max_tokens, json_mode=True)
+        if not text:
+            return {}
         # Clean markdown fences if present
         if text.startswith("```"):
             text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
         return json.loads(text)
     except Exception as e:
-        print(f"[AI] Gemini error: {e}")
+        print(f"[AI] _chat error: {e}")
         return {}
 
 
 def _chat_text(prompt: str, system: str = "You are an intelligent HR assistant.", max_tokens: int = 512) -> str:
-    """Call Gemini and return plain text response."""
-    if not _AI_ENABLED or not _client:
-        return ""
+    """Call OpenRouter and return plain text response."""
     try:
-        response = _client.models.generate_content(
-            model=_MODEL,
-            contents=f"{system}\n\n{prompt}",
-            config={
-                "temperature": 0.4,
-                "max_output_tokens": max_tokens,
-            },
-        )
-        return response.text.strip()
+        return _call_openrouter(prompt, system, max_tokens, json_mode=False)
     except Exception as e:
-        print(f"[AI] Gemini error: {e}")
-        return ""
+        print(f"[AI] _chat_text error: {e}")
+        raise e
 
 
 # ─────────────────────────────────────────────
@@ -323,7 +379,7 @@ Return JSON:
 # ─────────────────────────────────────────────
 # ATTRITION RISK PREDICTION
 # ─────────────────────────────────────────────
-def calculate_attrition_risk(employee, reviews: list, leaves: list, attendance_count: int) -> dict:
+def calculate_attrition_risk(employee, reviews: list, leaves: list, attendance_count: int, skip_llm: bool = False) -> dict:
     risk_score = 0
     factors = []
 
@@ -374,7 +430,7 @@ def calculate_attrition_risk(employee, reviews: list, leaves: list, attendance_c
 
     # LLM explanation
     explanation = ""
-    if _AI_ENABLED and factors:
+    if not skip_llm and _AI_ENABLED and factors:
         result = _chat(f"""An employee named {employee.full_name} ({employee.designation}) has an attrition risk score of {risk_score}/100.
 Risk factors identified: {'; '.join(factors)}
 
@@ -403,7 +459,7 @@ Return JSON: {{"recommendation": "..."}}""")
 # ─────────────────────────────────────────────
 def hr_copilot_chat(message: str, context: dict) -> str:
     if not _AI_ENABLED:
-        return "AI Copilot requires a GEMINI_API_KEY environment variable. Please set it to enable this feature. Get a free key at https://aistudio.google.com/apikey"
+        return "AI Copilot requires an OPENROUTER_API_KEY environment variable. Please set it to enable this feature. Get a free key at https://openrouter.ai/keys"
 
     system = """You are an intelligent HR assistant for an HRMS system called TechCorp HRMS.
 You have access to real HR data provided in the context. Answer questions naturally and helpfully.
@@ -417,8 +473,14 @@ User Question: {message}
 
 Answer the question based on the data above. Be specific with numbers and names."""
 
-    result = _chat_text(prompt, system, max_tokens=512)
-    return result or "Sorry, I couldn't process that request. Please try again."
+    try:
+        result = _chat_text(prompt, system, max_tokens=512)
+        return result or "Sorry, I couldn't process that request. Please try again."
+    except Exception as e:
+        err_msg = str(e)
+        if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "quota" in err_msg.lower():
+            return "I have temporarily exceeded the OpenRouter API rate limits (RESOURCE_EXHAUSTED). Please wait a moment and try again shortly!"
+        return "Sorry, I couldn't process that request. Please try again."
 
 
 # ─────────────────────────────────────────────
@@ -713,3 +775,92 @@ Return JSON:
         ],
         "assessment": f"{employee_name} shows {'strong' if score >= 75 else 'moderate' if score >= 50 else 'developing'} readiness for {target_role}."
     }
+
+
+# ─────────────────────────────────────────────
+# AI RETRIEVAL-AUGMENTED GENERATION (RAG)
+# ─────────────────────────────────────────────
+def extract_file_text(file_path: str) -> str:
+    """Robustly extract plain text from PDF, DOCX, or TXT files."""
+    if not file_path or not os.path.exists(file_path):
+        return ""
+    
+    ext = os.path.splitext(file_path)[1].lower()
+    try:
+        if ext == ".pdf":
+            import fitz
+            doc = fitz.open(file_path)
+            text = ""
+            for page in doc:
+                text += page.get_text()
+            return text
+        elif ext in [".docx", ".doc"]:
+            import docx
+            doc = docx.Document(file_path)
+            return "\n".join([p.text for p in doc.paragraphs])
+        elif ext in [".txt", ".md", ".json", ".csv"]:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                return f.read()
+    except Exception as e:
+        print(f"[RAG] Error parsing {file_path}: {e}")
+    return ""
+
+
+def search_documents_rag(query: str, db, employee_id: Optional[int] = None) -> str:
+    """RAG Retrieval: Search all active documents (isolated by role), chunk them, and return matching context."""
+    from app.models.document import Document, DocumentStatus
+    
+    # Clean query and extract key terms (ignoring standard stop words)
+    stop_words = {"what", "is", "our", "the", "a", "an", "on", "for", "in", "to", "with", "of", "about", "policy", "employee", "company"}
+    terms = [word.lower() for word in query.split() if word.isalnum() and word.lower() not in stop_words]
+    
+    if not terms:
+        return ""
+        
+    # Get active documents
+    doc_query = db.query(Document).filter(Document.status == DocumentStatus.ACTIVE)
+    if employee_id:
+        doc_query = doc_query.filter((Document.employee_id == employee_id) | (Document.employee_id == None))
+    
+    documents = doc_query.all()
+    
+    scored_chunks = []
+    for doc in documents:
+        if not doc.file_path or not os.path.exists(doc.file_path):
+            continue
+            
+        text = extract_file_text(doc.file_path)
+        if not text:
+            continue
+            
+        # Split into paragraph chunks (excluding empty/tiny lines)
+        chunks = [c.strip() for c in text.split("\n\n") if len(c.strip()) > 15]
+        for c in chunks:
+            # Simple keyword scoring (TF-IDF approximation)
+            score = 0
+            chunk_lower = c.lower()
+            for term in terms:
+                count = chunk_lower.count(term)
+                if count > 0:
+                    score += count * (1.5 if term in doc.title.lower() or (doc.tags and term in doc.tags.lower()) else 1.0)
+            
+            if score > 0:
+                scored_chunks.append({
+                    "text": c,
+                    "source": doc.file_name,
+                    "title": doc.title,
+                    "score": score
+                })
+                
+    # Sort chunks by score desc and take top 3
+    scored_chunks.sort(key=lambda x: x["score"], reverse=True)
+    top_chunks = scored_chunks[:3]
+    
+    if not top_chunks:
+        return ""
+        
+    context_blocks = []
+    for ch in top_chunks:
+        context_blocks.append(f"[Source Document: {ch['title']} ({ch['source']})]\n{ch['text']}")
+        
+    return "\n\n".join(context_blocks)

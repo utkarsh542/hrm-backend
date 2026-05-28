@@ -101,14 +101,19 @@ async def parse_and_create_candidate(file: UploadFile = File(...), job_id: int =
     application = None
     if job_id:
         job = db.query(Job).filter(Job.id == job_id).first()
-        if job:
-            screening = screen_resume(candidate.skills or "", job.skills or "", candidate.experience_years or 0)
-            application = Application(
-                candidate_id=candidate.id, job_id=job_id, status=ApplicationStatus.APPLIED,
-                source=ApplicationSource.WEBSITE, ai_score=screening["score"], ai_summary=screening["summary"],
+        if not job:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Job ID {job_id} does not exist. The candidate was successfully saved to your database, but the job application could not be created."
             )
-            db.add(application)
-            db.commit()
+        screening = screen_resume(candidate.skills or "", job.skills or "", candidate.experience_years or 0)
+        application = Application(
+            candidate_id=candidate.id, job_id=job_id, status=ApplicationStatus.APPLIED,
+            source=ApplicationSource.WEBSITE, ai_score=screening["score"], ai_summary=screening["summary"],
+        )
+        db.add(application)
+        db.commit()
+        db.refresh(application)
     return {"candidate_id": candidate.id, "candidate_name": candidate.full_name,
             "parsed_data": parsed, "application_id": application.id if application else None,
             "is_existing": existing is not None}

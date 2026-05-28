@@ -35,7 +35,7 @@ class Document(Base):
     __table_args__ = {'extend_existing': True}
 
     id              = Column(Integer, primary_key=True, index=True)
-    employee_id     = Column(Integer, nullable=True)   # None = company-wide
+    employee_id     = Column(Integer, nullable=True, index=True)   # None = company-wide
     uploaded_by     = Column(Integer, nullable=True)
     title           = Column(String, nullable=False)
     description     = Column(Text, nullable=True)

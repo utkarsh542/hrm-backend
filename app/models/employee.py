@@ -40,7 +40,7 @@ class Employee(Base):
     __tablename__ = "employees"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, nullable=True)  # Link to User
+    user_id = Column(Integer, nullable=True, index=True)  # Link to User
     employee_id = Column(String, unique=True, nullable=False)  # e.g., EMP001
     full_name = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=False)
@@ -50,12 +50,12 @@ class Employee(Base):
     address = Column(Text, nullable=True)
     
     # Professional
-    department_id = Column(Integer, nullable=True)
+    department_id = Column(Integer, nullable=True, index=True)
     designation = Column(String, nullable=True)
     employment_type = Column(SAEnum(EmploymentType), default=EmploymentType.FULL_TIME)
     employment_status = Column(SAEnum(EmploymentStatus), default=EmploymentStatus.ACTIVE)
     joining_date = Column(Date, nullable=False, default=date.today)
-    reporting_manager_id = Column(Integer, nullable=True)
+    reporting_manager_id = Column(Integer, nullable=True, index=True)
     
     # Compensation
     ctc = Column(Float, default=0)  # Annual CTC

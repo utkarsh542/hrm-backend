@@ -63,7 +63,8 @@ def get_current_user(
 def require_roles(*roles: str):
     """Role-based access control dependency factory."""
     def _check(current_user: User = Depends(get_current_user)) -> User:
-        if current_user.role.value not in roles:
+        role_val = current_user.role.value if hasattr(current_user.role, "value") else str(current_user.role)
+        if role_val.lower() not in [r.lower() for r in roles]:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
         return current_user
     return _check

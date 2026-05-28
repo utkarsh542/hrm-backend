@@ -45,13 +45,14 @@ def mark_all_read(user_id: int, db: Session = Depends(get_db)):
     return {"success": True}
 
 
-def create_notification(db: Session, user_id: int, title: str, message: str, ntype: str = "info", link: str = None):
+def create_notification(db: Session, user_id: int, title: str, message: str, type: str = "info", link: str = None):
     """Helper to create a notification from other routers."""
     notif = Notification(
         user_id=user_id, title=title, message=message,
-        type=NotificationType(ntype) if ntype in [e.value for e in NotificationType] else NotificationType.info,
+        type=NotificationType(type) if type in [e.value for e in NotificationType] else NotificationType.info,
         link=link,
     )
     db.add(notif)
     db.commit()
     return notif
+

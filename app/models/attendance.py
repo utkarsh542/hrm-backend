@@ -36,8 +36,8 @@ class Attendance(Base):
     __tablename__ = "attendance"
 
     id = Column(Integer, primary_key=True, index=True)
-    employee_id = Column(Integer, nullable=False)
-    date = Column(Date, nullable=False, default=date.today)
+    employee_id = Column(Integer, nullable=False, index=True)
+    date = Column(Date, nullable=False, default=date.today, index=True)
     status = Column(SAEnum(AttendanceStatus), default=AttendanceStatus.PRESENT)
     check_in = Column(DateTime, nullable=True)
     check_out = Column(DateTime, nullable=True)
@@ -52,13 +52,13 @@ class LeaveRequest(Base):
     __tablename__ = "leave_requests"
 
     id = Column(Integer, primary_key=True, index=True)
-    employee_id = Column(Integer, nullable=False)
+    employee_id = Column(Integer, nullable=False, index=True)
     leave_type = Column(SAEnum(LeaveType), default=LeaveType.CASUAL)
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
     days = Column(Float, nullable=False)
     reason = Column(Text, nullable=True)
-    status = Column(SAEnum(LeaveStatus), default=LeaveStatus.PENDING)
+    status = Column(SAEnum(LeaveStatus), default=LeaveStatus.PENDING, index=True)
     approved_by = Column(Integer, nullable=True)
     approved_at = Column(DateTime, nullable=True)
     rejection_reason = Column(Text, nullable=True)

@@ -30,14 +30,14 @@ class Expense(Base):
     __table_args__ = {'extend_existing': True}
 
     id            = Column(Integer, primary_key=True, index=True)
-    employee_id   = Column(Integer, nullable=False)
+    employee_id   = Column(Integer, nullable=False, index=True)
     title         = Column(String, nullable=False)
     description   = Column(Text, nullable=True)
     category      = Column(SAEnum(ExpenseCategory), default=ExpenseCategory.OTHER)
     amount        = Column(Float, nullable=False)
     currency      = Column(String, default="INR")
     expense_date  = Column(Date, nullable=False, default=date.today)
-    status        = Column(SAEnum(ExpenseStatus), default=ExpenseStatus.SUBMITTED)
+    status        = Column(SAEnum(ExpenseStatus), default=ExpenseStatus.SUBMITTED, index=True)
     receipt_path  = Column(String, nullable=True)
     receipt_name  = Column(String, nullable=True)
     approved_by   = Column(Integer, nullable=True)
