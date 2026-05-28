@@ -1,7 +1,9 @@
 """HRMS Backend — FastAPI Application Entry Point."""
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+import traceback
 
 from app.config import settings
 from app.database import create_tables
