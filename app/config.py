@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     CURRENCY: str = "INR"
     CURRENCY_SYMBOL: str = "₹"
     
+    # Geofence settings (TechCorp office center: Bangalore)
+    ORG_LATITUDE: float = 12.9716
+    ORG_LONGITUDE: float = 77.5946
+    GEOFENCE_RADIUS_METERS: float = 100.0
+    
     class Config:
         env_file = ".env"
 

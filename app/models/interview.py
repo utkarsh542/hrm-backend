@@ -51,5 +51,6 @@ class Interview(Base):
     overall_score = Column(Float, nullable=True)
     recommendation = Column(String, nullable=True)  # hire, reject, next_round
     feedback = Column(Text, nullable=True)
+    round_number = Column(Integer, default=1, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -160,6 +160,7 @@ class InterviewCreate(BaseModel):
     interviewer_email: Optional[str] = None
     meeting_link: Optional[str] = None
     location: Optional[str] = None
+    round_number: int = 1
 
 class InterviewUpdate(BaseModel):
     status: Optional[str] = None
@@ -186,6 +187,7 @@ class InterviewResponse(BaseModel):
     overall_score: Optional[float]
     recommendation: Optional[str]
     feedback: Optional[str]
+    round_number: int = 1
     candidate_name: str = ""
     job_title: str = ""
     
@@ -260,6 +262,9 @@ class AttendanceCreate(BaseModel):
 
 class AttendanceCheckIn(BaseModel):
     employee_id: int
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    image_base64: Optional[str] = None
 
 class AttendanceResponse(BaseModel):
     id: int
@@ -270,6 +275,18 @@ class AttendanceResponse(BaseModel):
     check_out: Optional[dt.datetime]
     work_hours: float
     employee_name: str = ""
+    
+    # Geolocation & Reverse Geocoded address fields
+    check_in_lat: Optional[float] = None
+    check_in_lon: Optional[float] = None
+    check_out_lat: Optional[float] = None
+    check_out_lon: Optional[float] = None
+    check_in_address: Optional[str] = None
+    check_out_address: Optional[str] = None
+    check_in_district: Optional[str] = None
+    check_in_state: Optional[str] = None
+    check_out_district: Optional[str] = None
+    check_out_state: Optional[str] = None
     
     class Config:
         from_attributes = True

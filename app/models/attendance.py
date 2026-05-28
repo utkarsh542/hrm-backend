@@ -45,6 +45,19 @@ class Attendance(Base):
     overtime_hours = Column(Float, default=0)
     notes = Column(Text, nullable=True)
     ip_address = Column(String, nullable=True)
+    
+    # Geofence & Reverse Geocoding logs
+    check_in_lat = Column(Float, nullable=True)
+    check_in_lon = Column(Float, nullable=True)
+    check_out_lat = Column(Float, nullable=True)
+    check_out_lon = Column(Float, nullable=True)
+    check_in_address = Column(String, nullable=True)
+    check_out_address = Column(String, nullable=True)
+    check_in_district = Column(String, nullable=True)
+    check_in_state = Column(String, nullable=True)
+    check_out_district = Column(String, nullable=True)
+    check_out_state = Column(String, nullable=True)
+    
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -74,3 +87,13 @@ class Holiday(Base):
     date = Column(Date, nullable=False)
     type = Column(String, default="national")  # national, regional, optional
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class GeofenceSetting(Base):
+    __tablename__ = "geofence_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    radius = Column(Float, default=100.0)
+
