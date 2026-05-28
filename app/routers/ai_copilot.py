@@ -189,7 +189,7 @@ def get_attrition_risk(db: Session = Depends(get_db)):
                 f"- ID {e['employee_id']}: {e['full_name']} ({e['designation']}), "
                 f"Risk Score: {e['risk_score']}/100, Factors: {'; '.join(e['factors'])}"
             )
-        
+        joined_bullets = "\n".join(emp_bullets)
         prompt = f"""We have calculated employee attrition risks. Write a tailored, highly professional 1 to 2-sentence HR retention recommendation for each.
 Return a JSON object mapping Employee IDs (as string keys) to recommendations.
 Example:
@@ -199,7 +199,7 @@ Example:
 }}
 
 Employees list:
-{"\n".join(emp_bullets)}"""
+{joined_bullets}"""
         
         try:
             bulk_result = _chat(prompt)
