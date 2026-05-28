@@ -41,7 +41,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 # CORS — allow frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000",   "https://hrm-frontend-coral.vercel.app",],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
