@@ -21,6 +21,21 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    print("\n========== ERROR OCCURRED ==========")
+    print(f"URL: {request.url}")
+    print(traceback.format_exc())
+    print("====================================\n")
+
+    return JSONResponse(
+        status_code=500,
+        content={
+            "message": str(exc),
+            "path": str(request.url),
+        },
+    )
 # CORS — allow frontend
 app.add_middleware(
     CORSMiddleware,
