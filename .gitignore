@@ -32,3 +32,4 @@ uploads/
 
 # PDFs (optional)
 *.pdf
+*.db
