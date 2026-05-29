@@ -2,6 +2,8 @@
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
 from typing import Optional
 import logging
 from app.config import settings
@@ -14,7 +16,7 @@ def _print_simulated_email(to_email: str, subject: str, body_text: str):
     divider = "═" * 70
     border = "─" * 70
     logger.info(f"\n{divider}")
-    logger.info("  📧  [CORPORATE EMAIL DISPATCH SIMULATION]")
+    logger.info("  [CORPORATE EMAIL DISPATCH SIMULATION]")
     logger.info(divider)
     logger.info(f"  TO:      {to_email}")
     logger.info(f"  FROM:    {getattr(settings, 'SMTP_FROM', 'noreply@techcorp.com')}")
@@ -57,6 +59,59 @@ def send_email(to_email: str, subject: str, html_content: str, text_content: str
         logger.error(f"Error sending SMTP email to {to_email}: {e}")
         # Graceful fallback to console logging
         _print_simulated_email(to_email, f"[SMTP FAIL FALLBACK] {subject}", text_content)
+        return False
+
+
+def send_email_with_attachment(to_email: str, subject: str, html_content: str, text_content: str, attachment_bytes: bytes, attachment_name: str) -> bool:
+    """Send an email with a file attachment (such as a PDF)."""
+    server = getattr(settings, "SMTP_SERVER", None)
+    port = getattr(settings, "SMTP_PORT", 587)
+    user = getattr(settings, "SMTP_USER", None)
+    password = getattr(settings, "SMTP_PASSWORD", None)
+    sender = getattr(settings, "SMTP_FROM", "noreply@techcorp.com")
+    
+    # If not configured, trigger the console delivery simulation with attachment notification
+    if not server or not user or not password:
+        _print_simulated_email(
+            to_email, 
+            subject, 
+            text_content + f"\n\n[SIMULATED ATTACHMENT: {attachment_name} ({len(attachment_bytes)} bytes)]"
+        )
+        return True
+        
+    try:
+        msg = MIMEMultipart("mixed")
+        msg["Subject"] = subject
+        msg["From"] = sender
+        msg["To"] = to_email
+        
+        # Attach text and html content as alternative bodies
+        body_part = MIMEMultipart("alternative")
+        body_part.attach(MIMEText(text_content, "plain"))
+        body_part.attach(MIMEText(html_content, "html"))
+        msg.attach(body_part)
+        
+        # Attach the file
+        part = MIMEBase("application", "octet-stream")
+        part.set_payload(attachment_bytes)
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", f"attachment; filename={attachment_name}")
+        msg.attach(part)
+        
+        with smtplib.SMTP(server, port) as smtp:
+            smtp.starttls()
+            smtp.login(user, password)
+            smtp.sendmail(sender, to_email, msg.as_string())
+        logger.info(f"Successfully sent email with attachment {attachment_name} to {to_email} via SMTP.")
+        return True
+    except Exception as e:
+        logger.error(f"Error sending SMTP email with attachment to {to_email}: {e}")
+        # Fallback simulation
+        _print_simulated_email(
+            to_email, 
+            f"[SMTP FAIL FALLBACK] {subject}", 
+            text_content + f"\n\n[SIMULATED ATTACHMENT: {attachment_name} ({len(attachment_bytes)} bytes)]"
+        )
         return False
 
 
@@ -293,6 +348,45 @@ def send_offboarding_completion_email(to_email: str, name: str, lwd: str, total_
         f"  <p>We sincerely appreciate your dedicated service and contributions to TechCorp. We wish you the very best of success in all your future professional and personal endeavors.</p>"
         f"  <hr style='border: none; border-top: 1px solid #eee; margin: 24px 0;' />"
         f"  <p style='font-size: 12px; color: #888;'>Best regards,<br/>TechCorp HR Operations Team</p>"
+        f"</div>"
+    )
+    
+    return send_email(to_email, subject, html, text)
+
+
+def send_interview_invitation_email(to_email: str, candidate_name: str, job_title: str, round_number: int, interview_type: str, scheduled_at: str, interviewer_name: str, meeting_link: str, is_update: bool = False):
+    """Send an interview invitation email containing round details, schedule, and join link."""
+    action_type = "Updated Invitation" if is_update else "Invitation"
+    subject = f"{action_type}: Round {round_number} {interview_type.title()} Interview — {job_title}"
+    
+    text = (
+        f"Hi {candidate_name},\n\n"
+        f"We are pleased to invite you for the next round of interview for the {job_title} position at TechCorp.\n\n"
+        f"Interview Details:\n"
+        f"  - Stage: Round {round_number} ({interview_type.title()} Interview)\n"
+        f"  - Date & Time: {scheduled_at}\n"
+        f"  - Interviewer: {interviewer_name or 'TechCorp Interviewing Panel'}\n"
+        f"  - Meeting Link: {meeting_link}\n\n"
+        f"Please click the link above at the scheduled time to join the interview room.\n\n"
+        f"Best regards,\n"
+        f"TechCorp Recruitment Team"
+    )
+    
+    html = (
+        f"<div style='font-family: sans-serif; max-width: 550px; margin: auto; padding: 24px; border: 1px solid #ddd; border-radius: 12px; background-color: #fcfcfc;'>"
+        f"  <h2 style='color: #6c63ff; margin-bottom: 20px;'>Interview Invitation</h2>"
+        f"  <p>Dear <strong>{candidate_name}</strong>,</p>"
+        f"  <p>We are pleased to invite you for the next round of interview for the <strong>{job_title}</strong> position at TechCorp.</p>"
+        f"  <div style='background-color: #f1f0ff; border-left: 4px solid #6c63ff; padding: 16px; margin: 24px 0; border-radius: 8px; font-size: 14px;'>"
+        f"    <p style='margin: 0 0 8px;'><strong>Interview Round Details:</strong></p>"
+        f"    <p style='margin: 0 0 6px;'><strong>Round:</strong> Round {round_number} ({interview_type.title()} Interview)</p>"
+        f"    <p style='margin: 0 0 6px;'><strong>Date & Time:</strong> {scheduled_at}</p>"
+        f"    <p style='margin: 0 0 6px;'><strong>Interviewer:</strong> {interviewer_name or 'TechCorp Interviewing Panel'}</p>"
+        f"    <p style='margin: 0;'><strong>Meeting Link:</strong> <a href='{meeting_link}' style='color: #6c63ff; font-weight: 600;'>Join Interview Room</a></p>"
+        f"  </div>"
+        f"  <p>Please click the meeting link at the scheduled time to enter the interview room. If you need to reschedule, please notify the recruiter immediately.</p>"
+        f"  <hr style='border: none; border-top: 1px solid #eee; margin: 24px 0;' />"
+        f"  <p style='font-size: 12px; color: #888;'>Best regards,<br/>TechCorp Recruitment Team</p>"
         f"</div>"
     )
     

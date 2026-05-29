@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     
     # Database
-    DATABASE_URL: str = "sqlite:///./hrms.db"
+    DATABASE_URL: str = "sqlite:///./hrm.db"
     
     # JWT Auth
     SECRET_KEY: str = "hrms-super-secret-key-change-in-production-2024"

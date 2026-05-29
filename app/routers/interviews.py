@@ -56,6 +56,25 @@ def schedule_interview(request: InterviewCreate, db: Session = Depends(get_db)):
     
     candidate = db.query(Candidate).filter(Candidate.id == interview.candidate_id).first()
     job = db.query(Job).filter(Job.id == interview.job_id).first()
+    
+    # Dispatch email invitation to candidate
+    if candidate:
+        try:
+            from app.services.email_service import send_interview_invitation_email
+            date_str = interview.scheduled_at.strftime("%d %b %Y, %I:%M %p") if hasattr(interview.scheduled_at, "strftime") else str(interview.scheduled_at)
+            send_interview_invitation_email(
+                to_email=candidate.email,
+                candidate_name=candidate.full_name,
+                job_title=job.title if job else "Software Position",
+                round_number=interview.round_number,
+                interview_type=interview.interview_type.value if hasattr(interview.interview_type, "value") else str(interview.interview_type),
+                scheduled_at=date_str,
+                interviewer_name=interview.interviewer_name,
+                meeting_link=interview.meeting_link
+            )
+        except Exception as e:
+            print("Failed to send candidate email:", e)
+            
     resp = InterviewResponse.model_validate(interview)
     resp.candidate_name = candidate.full_name if candidate else ""
     resp.job_title = job.title if job else ""
@@ -67,6 +86,11 @@ def update_interview(interview_id: int, request: InterviewUpdate, db: Session = 
     interview = db.query(Interview).filter(Interview.id == interview_id).first()
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
+        
+    # Store old properties to check for rescheduling
+    old_time = interview.scheduled_at
+    old_interviewer = interview.interviewer_name
+    old_status = interview.status
     
     update_data = request.model_dump(exclude_unset=True)
     for key, value in update_data.items():
@@ -85,6 +109,27 @@ def update_interview(interview_id: int, request: InterviewUpdate, db: Session = 
     
     candidate = db.query(Candidate).filter(Candidate.id == interview.candidate_id).first()
     job = db.query(Job).filter(Job.id == interview.job_id).first()
+    
+    # If scheduled/rescheduled date or interviewer has changed, send rescheduling email update
+    if candidate and (old_time != interview.scheduled_at or old_interviewer != interview.interviewer_name or old_status != interview.status):
+        if interview.status == InterviewStatus.SCHEDULED:
+            try:
+                from app.services.email_service import send_interview_invitation_email
+                date_str = interview.scheduled_at.strftime("%d %b %Y, %I:%M %p") if hasattr(interview.scheduled_at, "strftime") else str(interview.scheduled_at)
+                send_interview_invitation_email(
+                    to_email=candidate.email,
+                    candidate_name=candidate.full_name,
+                    job_title=job.title if job else "Software Position",
+                    round_number=interview.round_number,
+                    interview_type=interview.interview_type.value if hasattr(interview.interview_type, "value") else str(interview.interview_type),
+                    scheduled_at=date_str,
+                    interviewer_name=interview.interviewer_name,
+                    meeting_link=interview.meeting_link,
+                    is_update=True
+                )
+            except Exception as e:
+                print("Failed to send rescheduled email:", e)
+                
     resp = InterviewResponse.model_validate(interview)
     resp.candidate_name = candidate.full_name if candidate else ""
     resp.job_title = job.title if job else ""
@@ -190,6 +235,7 @@ def start_live_session(interview_id: int, db: Session = Depends(get_db)):
         "candidate_name": candidate.full_name if candidate else "",
         "job_title": job_title,
         "interview_type": interview.interview_type.value,
+        "round_number": interview.round_number,
         "questions": questions,
         "total_questions": len(questions),
     }

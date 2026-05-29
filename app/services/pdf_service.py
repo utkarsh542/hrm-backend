@@ -5,7 +5,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch, mm
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer, HRFlowable
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer, HRFlowable, PageBreak
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
 
 from app.config import settings
@@ -210,3 +210,225 @@ def generate_relieving_letter_pdf(employee_data: dict, output_path: str) -> str:
     
     doc.build(elements)
     return output_path
+
+
+def generate_offer_letter_pdf(candidate_name: str, job_title: str, ctc: float, joining_date: str, probation_months: int, valid_until: str) -> bytes:
+    """Generate a formal multi-page PDF Offer Letter, Annexure, and Corporate Policies."""
+    import io
+    from reportlab.lib.pagesizes import letter
+    
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=54,
+        leftMargin=54,
+        topMargin=54,
+        bottomMargin=54
+    )
+    
+    styles = getSampleStyleSheet()
+    
+    # Custom styles to avoid duplicate key errors
+    title_style = ParagraphStyle(
+        'DocTitle',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=20,
+        leading=24,
+        textColor=colors.HexColor('#6c63ff'),
+        alignment=1, # Center
+        spaceAfter=15
+    )
+    
+    h1_style = ParagraphStyle(
+        'DocH1',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=14,
+        leading=18,
+        textColor=colors.HexColor('#1e1b4b'),
+        spaceBefore=12,
+        spaceAfter=6,
+        keepWithNext=True
+    )
+    
+    body_style = ParagraphStyle(
+        'DocBody',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=10.5,
+        leading=15,
+        textColor=colors.HexColor('#334155'),
+        spaceAfter=10
+    )
+    
+    bullet_style = ParagraphStyle(
+        'DocBullet',
+        parent=body_style,
+        leftIndent=20,
+        spaceAfter=6
+    )
+    
+    table_text_style = ParagraphStyle(
+        'TableText',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=9.5,
+        leading=12,
+        textColor=colors.HexColor('#334155')
+    )
+    
+    table_header_style = ParagraphStyle(
+        'TableHeaderText',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=9.5,
+        leading=12,
+        textColor=colors.white
+    )
+
+    story = []
+    
+    # ── PAGE 1: OFFER LETTER ──
+    # Company Header
+    story.append(Paragraph(settings.COMPANY_NAME, title_style))
+    story.append(Paragraph(f"{settings.COMPANY_ADDRESS} | hr@techcorp.com", ParagraphStyle('HeaderSub', parent=body_style, alignment=1, fontSize=9, textColor=colors.HexColor('#64748b'))))
+    story.append(Spacer(1, 20))
+    
+    # Date
+    today_str = datetime.today().strftime("%d %B %Y")
+    story.append(Paragraph(f"Date: {today_str}", body_style))
+    story.append(Spacer(1, 10))
+    
+    # Candidate Address
+    story.append(Paragraph(f"To,<br/><b>{candidate_name}</b>", body_style))
+    story.append(Spacer(1, 10))
+    
+    # Subject
+    story.append(Paragraph(f"<b>Subject: Letter of Offer of Employment — {job_title}</b>", h1_style))
+    story.append(Spacer(1, 8))
+    
+    # Letter body
+    story.append(Paragraph(f"Dear {candidate_name},", body_style))
+    
+    letter_text = (
+        f"Following our recent discussions and interview rounds, we are absolutely delighted to extend to you a formal offer of employment "
+        f"for the position of <b>{job_title}</b> at {settings.COMPANY_NAME}. "
+        f"Your technical qualifications, problem-solving skills, and alignment with our company values were highly appreciated by the interview board."
+    )
+    story.append(Paragraph(letter_text, body_style))
+    
+    terms_intro = "The detailed terms and conditions of your employment are as follows:"
+    story.append(Paragraph(terms_intro, body_style))
+    
+    # Bullet points of terms
+    story.append(Paragraph(f"• <b>Designation:</b> {job_title}", bullet_style))
+    story.append(Paragraph(f"• <b>Annual Compensation:</b> INR {ctc:,.2f} per annum (detailed breakdown provided in Annexure A)", bullet_style))
+    story.append(Paragraph(f"• <b>Proposed Joining Date:</b> {joining_date}", bullet_style))
+    story.append(Paragraph(f"• <b>Probation Period:</b> You will be on probation for a period of {probation_months} months from your date of joining.", bullet_style))
+    story.append(Paragraph(f"• <b>Offer Validity:</b> This offer is valid until {valid_until}. Please sign and return a duplicate copy of this letter as acceptance of this offer.", bullet_style))
+    
+    closing_text = (
+        "We are excited about the prospect of you joining our team and contributing to the next phase of our growth. "
+        "We look forward to a mutually rewarding relationship."
+    )
+    story.append(Paragraph(closing_text, body_style))
+    story.append(Spacer(1, 15))
+    
+    # Signatures
+    story.append(Paragraph(f"For <b>{settings.COMPANY_NAME}</b>,", body_style))
+    story.append(Spacer(1, 20))
+    story.append(Paragraph("<b>Global Talent Acquisition Operations</b>", ParagraphStyle('SignText', parent=body_style, fontName='Helvetica-Bold')))
+    story.append(Paragraph("Authorized Signatory", ParagraphStyle('SignSub', parent=body_style, fontSize=9, textColor=colors.HexColor('#64748b'))))
+    
+    # Force Page Break to Annexure
+    story.append(PageBreak())
+    
+    # ── PAGE 2: ANNEXURE A (COMPENSATION SUMMARY) ──
+    story.append(Paragraph("ANNEXURE A — COMPENSATION STRUCTURE", h1_style))
+    story.append(Paragraph(f"<b>Candidate Name:</b> {candidate_name} | <b>Designation:</b> {job_title}", body_style))
+    story.append(Spacer(1, 10))
+    
+    # Calculate breakdowns
+    monthly_ctc = ctc / 12.0
+    basic = monthly_ctc * 0.5
+    hra = monthly_ctc * 0.2
+    special = monthly_ctc * 0.3
+    
+    # Table data
+    data = [
+        [Paragraph("Earnings Component", table_header_style), Paragraph("Monthly (INR)", table_header_style), Paragraph("Annualized (INR)", table_header_style)],
+        [Paragraph("Basic Salary (50%)", table_text_style), Paragraph(f"₹{basic:,.2f}", table_text_style), Paragraph(f"₹{basic * 12.0:,.2f}", table_text_style)],
+        [Paragraph("House Rent Allowance (20%)", table_text_style), Paragraph(f"₹{hra:,.2f}", table_text_style), Paragraph(f"₹{hra * 12.0:,.2f}", table_text_style)],
+        [Paragraph("Special Allowance (30%)", table_text_style), Paragraph(f"₹{special:,.2f}", table_text_style), Paragraph(f"₹{special * 12.0:,.2f}", table_text_style)],
+        [Paragraph("<b>Total Gross CTC</b>", table_text_style), Paragraph(f"<b>₹{monthly_ctc:,.2f}</b>", table_text_style), Paragraph(f"<b>₹{ctc:,.2f}</b>", table_text_style)]
+    ]
+    
+    col_widths = [200, 150, 150]
+    t = Table(data, colWidths=col_widths)
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (2,0), colors.HexColor('#6c63ff')),
+        ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+        ('ALIGN', (1,0), (-1,-1), 'RIGHT'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('TOPPADDING', (0,0), (-1,-1), 8),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#e2e8f0')),
+        ('BACKGROUND', (0,4), (2,4), colors.HexColor('#f1f0ff')),
+    ]))
+    
+    story.append(t)
+    story.append(Spacer(1, 20))
+    story.append(Paragraph("<i>Note: All salary payments are subject to applicable statutory tax deductions as per income tax regulations in force.</i>", ParagraphStyle('NoteText', parent=body_style, fontSize=8.5, textColor=colors.HexColor('#64748b'))))
+    
+    # Force Page Break to Policies
+    story.append(PageBreak())
+    
+    # ── PAGE 3: COMPANY POLICIES & TERMS ──
+    story.append(Paragraph(f"{settings.COMPANY_NAME} — EMPLOYMENT POLICIES & TERMS", h1_style))
+    story.append(Spacer(1, 10))
+    
+    story.append(Paragraph("<b>1. Code of Conduct & Ethics</b>", ParagraphStyle('SectionH', parent=h1_style, fontSize=11, spaceBefore=6)))
+    story.append(Paragraph(
+        f"All employees are expected to maintain the highest standards of integrity, professionalism, and ethical behavior during their association "
+        f"with {settings.COMPANY_NAME}. Any compliance breach, financial misconduct, or behavior detrimental to corporate harmony shall result in immediate disciplinary action up to termination.",
+        body_style
+    ))
+    
+    story.append(Paragraph("<b>2. Confidentiality & Non-Disclosure</b>", ParagraphStyle('SectionH', parent=h1_style, fontSize=11, spaceBefore=6)))
+    story.append(Paragraph(
+        "As an employee, you will have access to confidential corporate databases, client strategies, code bases, and intellectual property. "
+        "You are strictly prohibited from copying, distributing, sharing, or discussing any proprietary company files with any external parties, during or after your tenure. "
+        "All intellectual work created during your employment remains the exclusive property of the company.",
+        body_style
+    ))
+    
+    story.append(Paragraph("<b>3. Hours of Work & Hybrid Policy</b>", ParagraphStyle('SectionH', parent=h1_style, fontSize=11, spaceBefore=6)))
+    story.append(Paragraph(
+        "Our standard working hour requirement is 45 hours per week (Monday to Friday, 9:00 AM to 6:00 PM). "
+        "The company operates on a hybrid model. Employees are required to report to the corporate campus for a minimum of 3 days per week, "
+        "with remote work allowed on the remaining days, subject to manager approval and team alignment.",
+        body_style
+    ))
+    
+    story.append(Paragraph("<b>4. Leaves & Holidays</b>", ParagraphStyle('SectionH', parent=h1_style, fontSize=11, spaceBefore=6)))
+    story.append(Paragraph(
+        "Employees accrue 24 calendar days of paid leaves annually, allocated on a pro-rata basis. "
+        "All leaves must be requested and approved in advance by the reporting manager via the HRMS portal. "
+        "In addition, the company provides 10 national/gazetted public holidays annually, published at the beginning of each calendar year.",
+        body_style
+    ))
+    
+    story.append(Paragraph("<b>5. Termination & Resignation</b>", ParagraphStyle('SectionH', parent=h1_style, fontSize=11, spaceBefore=6)))
+    story.append(Paragraph(
+        f"During your probation period ({probation_months} months), either party may terminate this employment agreement by providing a 15-day written notice. "
+        f"Post successful confirmation, the notice period requirement shall be 30 days. The company reserves the right to relieve the employee earlier by paying "
+        f"salary in lieu of notice.",
+        body_style
+    ))
+    
+    doc.build(story)
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+    return pdf_bytes
