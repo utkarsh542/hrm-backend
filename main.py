@@ -1,4 +1,14 @@
 """HRMS Backend — FastAPI Application Entry Point."""
+# Monkeypatch passlib bcrypt issue with newer bcrypt versions before any other imports
+try:
+    import bcrypt
+    if not hasattr(bcrypt, "__about__"):
+        class MockAbout:
+            __version__ = bcrypt.__version__
+        bcrypt.__about__ = MockAbout()
+except ImportError:
+    pass
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
