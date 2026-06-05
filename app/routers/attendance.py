@@ -30,16 +30,28 @@ def _verify_face(image_base64: str, employee_id: int) -> dict:
         "reason": "Face matched successfully" if verified else "Face match confidence too low",
     }
 
-from app.models.attendance import Attendance, AttendanceStatus, LeaveRequest, LeaveType, LeaveStatus, Holiday
+from app.models.attendance import (
+    Attendance, AttendanceStatus, LeaveRequest, LeaveType, LeaveStatus, Holiday,
+    CompOffRule, CompOffRequest
+)
 from app.models.employee import Employee
 from app.models.user import User, UserRole
 from app.schemas.schemas import (
     AttendanceCreate, AttendanceCheckIn, AttendanceResponse,
-    LeaveRequestCreate, LeaveRequestUpdate, LeaveRequestResponse
+    LeaveRequestCreate, LeaveRequestUpdate, LeaveRequestResponse,
+    CompOffRuleResponse, CompOffRuleUpdate, CompOffRequestCreate,
+    CompOffRequestResponse, CompOffRequestAction
 )
 from app.services.auth_service import get_current_user, get_current_employee, require_roles
 
 router = APIRouter(prefix="/api/attendance", tags=["Attendance & Leave"])
+
+
+def get_role_value(role) -> str:
+    if hasattr(role, "value"):
+        return str(role.value).lower()
+    return str(role).lower()
+
 
 
 # ===== ATTENDANCE =====
@@ -52,7 +64,7 @@ def check_in(
 ):
     # Enforce data isolation: Employees and Managers can only check-in for themselves
     target_emp_id = request.employee_id
-    if current_user.role.value in ["employee", "manager"]:
+    if get_role_value(current_user.role) in ["employee", "manager"]:
         target_emp_id = current_employee.id
 
     # Face snap check
@@ -139,7 +151,7 @@ def check_out(
 ):
     # Enforce data isolation: Employees and Managers can only check-out for themselves
     target_emp_id = request.employee_id
-    if current_user.role.value in ["employee", "manager"]:
+    if get_role_value(current_user.role) in ["employee", "manager"]:
         target_emp_id = current_employee.id
 
     # Face snap check
@@ -218,7 +230,7 @@ def get_attendance_records(
     current_employee: Employee = Depends(get_current_employee)
 ):
     # Enforce data isolation
-    if current_user.role.value in ["employee", "manager"]:
+    if get_role_value(current_user.role) in ["employee", "manager"]:
         employee_id = current_employee.id
 
     query = db.query(Attendance)
@@ -255,7 +267,7 @@ def get_attendance_summary(
     current_employee: Employee = Depends(get_current_employee)
 ):
     # Enforce data isolation
-    if current_user.role.value in ["employee", "manager"]:
+    if get_role_value(current_user.role) in ["employee", "manager"]:
         if employee_id != current_employee.id:
             raise HTTPException(status_code=403, detail="Forbidden: You can only query your own data")
 
@@ -294,7 +306,7 @@ def apply_leave(
 ):
     # Enforce data isolation
     target_emp_id = request.employee_id
-    if current_user.role.value in ["employee", "manager"]:
+    if get_role_value(current_user.role) in ["employee", "manager"]:
         target_emp_id = current_employee.id
 
     emp = db.query(Employee).filter(Employee.id == target_emp_id).first()
@@ -303,6 +315,25 @@ def apply_leave(
     
     # Calculate days
     days = (request.end_date - request.start_date).days + 1
+
+    # Validate that no days in the range fall on a weekend or an official holiday
+    from datetime import timedelta
+    curr_date = request.start_date
+    while curr_date <= request.end_date:
+        # Check weekend (5: Saturday, 6: Sunday)
+        if curr_date.weekday() in [5, 6]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Leave request rejected: {curr_date.strftime('%Y-%m-%d')} falls on a weekend (Saturday/Sunday)."
+            )
+        # Check official holiday
+        holiday = db.query(Holiday).filter(Holiday.date == curr_date).first()
+        if holiday:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Leave request rejected: {curr_date.strftime('%Y-%m-%d')} is an official holiday ({holiday.name})."
+            )
+        curr_date += timedelta(days=1)
     
     # Check balance
     if request.leave_type == "casual" and emp.casual_leave_balance < days:
@@ -311,6 +342,10 @@ def apply_leave(
         raise HTTPException(status_code=400, detail="Insufficient sick leave balance")
     elif request.leave_type == "earned" and emp.earned_leave_balance < days:
         raise HTTPException(status_code=400, detail="Insufficient earned leave balance")
+    elif request.leave_type == "compensatory":
+        if (emp.comp_off_balance or 0.0) < days:
+            raise HTTPException(status_code=400, detail="Insufficient compensatory/comp-off leave balance")
+        emp.comp_off_balance = (emp.comp_off_balance or 0.0) - days
     
     leave_data = request.model_dump()
     leave_data["employee_id"] = target_emp_id
@@ -385,7 +420,7 @@ def list_leaves(
     current_employee: Employee = Depends(get_current_employee)
 ):
     # Enforce data isolation
-    if current_user.role.value in ["employee", "manager"]:
+    if get_role_value(current_user.role) in ["employee", "manager"]:
         employee_id = current_employee.id
 
     query = db.query(LeaveRequest)
@@ -420,13 +455,84 @@ def update_leave(
     if not leave:
         raise HTTPException(status_code=404, detail="Leave request not found")
         
-    # Enforce Role Guards: Employees can only cancel their own leaves
-    is_admin_or_hr_or_manager = current_user.role.value in ["admin", "hr", "manager"]
+    # Enforce Role Guards: Employees can only cancel their own leaves or edit details if pending
+    is_admin_or_hr_or_manager = get_role_value(current_user.role) in ["admin", "hr", "manager"]
+    
+    is_editing_details = (
+        request.start_date is not None or 
+        request.end_date is not None or 
+        request.reason is not None or 
+        request.leave_type is not None
+    )
+    
     if not is_admin_or_hr_or_manager:
         if leave.employee_id != current_employee.id:
             raise HTTPException(status_code=403, detail="Forbidden: You can only update your own leave requests")
-        if request.status != "cancelled":
+        if request.status is not None and request.status != "cancelled":
             raise HTTPException(status_code=403, detail="Forbidden: Employees can only cancel their own leaves")
+            
+    if is_editing_details:
+        if leave.status != LeaveStatus.PENDING:
+            raise HTTPException(status_code=400, detail="Cannot edit a leave request that is not pending.")
+            
+        new_start = request.start_date if request.start_date is not None else leave.start_date
+        new_end = request.end_date if request.end_date is not None else leave.end_date
+        new_reason = request.reason if request.reason is not None else leave.reason
+        new_type_str = request.leave_type if request.leave_type is not None else (leave.leave_type.value if hasattr(leave.leave_type, "value") else str(leave.leave_type))
+        
+        # Verify dates
+        if new_start > new_end:
+            raise HTTPException(status_code=400, detail="Start date cannot be after end date.")
+            
+        # Recalculate days (excluding weekends and holidays)
+        from datetime import timedelta
+        new_days = 0.0
+        curr_date = new_start
+        while curr_date <= new_end:
+            # Check weekend (5: Saturday, 6: Sunday)
+            if curr_date.weekday() in [5, 6]:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Leave request rejected: {curr_date.strftime('%Y-%m-%d')} falls on a weekend (Saturday/Sunday)."
+                )
+            # Check official holiday
+            holiday = db.query(Holiday).filter(Holiday.date == curr_date).first()
+            if holiday:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Leave request rejected: {curr_date.strftime('%Y-%m-%d')} is an official holiday ({holiday.name})."
+                )
+            new_days += 1.0
+            curr_date += timedelta(days=1)
+            
+        emp = db.query(Employee).filter(Employee.id == leave.employee_id).first()
+        if not emp:
+            raise HTTPException(status_code=404, detail="Employee not found")
+            
+        prev_type = leave.leave_type
+        new_type = LeaveType(new_type_str)
+        
+        # Refund old comp-off days if previous type was compensatory
+        if prev_type == LeaveType.COMPENSATORY:
+            emp.comp_off_balance = (emp.comp_off_balance or 0.0) + leave.days
+            
+        # Deduct new comp-off days if new type is compensatory
+        if new_type == LeaveType.COMPENSATORY:
+            if (emp.comp_off_balance or 0.0) < new_days:
+                # Rollback refund if it was compensatory
+                if prev_type == LeaveType.COMPENSATORY:
+                    emp.comp_off_balance = (emp.comp_off_balance or 0.0) - leave.days
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Insufficient compensatory/comp-off balance. Required: {new_days}, Available: {emp.comp_off_balance}"
+                )
+            emp.comp_off_balance = (emp.comp_off_balance or 0.0) - new_days
+            
+        leave.start_date = new_start
+        leave.end_date = new_end
+        leave.days = new_days
+        leave.reason = new_reason
+        leave.leave_type = new_type
     
     if request.status == "approved":
         if leave.status != LeaveStatus.APPROVED:
@@ -446,18 +552,27 @@ def update_leave(
     elif request.status == "rejected":
         leave.status = LeaveStatus.REJECTED
         leave.rejection_reason = request.rejection_reason
-        
-    elif request.status == "cancelled":
-        # Refund leave balance if it was already approved
-        if leave.status == LeaveStatus.APPROVED:
+        if leave.leave_type == LeaveType.COMPENSATORY:
             emp = db.query(Employee).filter(Employee.id == leave.employee_id).first()
             if emp:
-                if leave.leave_type == LeaveType.CASUAL:
+                emp.comp_off_balance = (emp.comp_off_balance or 0.0) + leave.days
+        
+    elif request.status == "cancelled":
+        emp = db.query(Employee).filter(Employee.id == leave.employee_id).first()
+        if emp:
+            if leave.leave_type == LeaveType.CASUAL:
+                if leave.status == LeaveStatus.APPROVED:
                     emp.casual_leave_balance = emp.casual_leave_balance + leave.days
-                elif leave.leave_type == LeaveType.SICK:
+            elif leave.leave_type == LeaveType.SICK:
+                if leave.status == LeaveStatus.APPROVED:
                     emp.sick_leave_balance = emp.sick_leave_balance + leave.days
-                elif leave.leave_type == LeaveType.EARNED:
+            elif leave.leave_type == LeaveType.EARNED:
+                if leave.status == LeaveStatus.APPROVED:
                     emp.earned_leave_balance = emp.earned_leave_balance + leave.days
+            elif leave.leave_type == LeaveType.COMPENSATORY:
+                # If the leave was pending or approved, we refund the balance since it was deducted on application
+                if leave.status in [LeaveStatus.PENDING, LeaveStatus.APPROVED]:
+                    emp.comp_off_balance = (emp.comp_off_balance or 0.0) + leave.days
         leave.status = LeaveStatus.CANCELLED
     
     db.commit()
@@ -511,7 +626,7 @@ def get_leave_balance(
     current_employee: Employee = Depends(get_current_employee)
 ):
     # Enforce data isolation
-    if current_user.role.value in ["employee", "manager"]:
+    if get_role_value(current_user.role) in ["employee", "manager"]:
         if employee_id != current_employee.id:
             raise HTTPException(status_code=403, detail="Forbidden: You can only query your own data")
 
@@ -527,9 +642,95 @@ def get_leave_balance(
 
 
 # ===== HOLIDAYS =====
+class HolidayCreate(BaseModel):
+    name: str
+    date: date
+    type: Optional[str] = "national"
+
 @router.get("/holidays/")
 def list_holidays(db: Session = Depends(get_db)):
     return db.query(Holiday).order_by(Holiday.date).all()
+
+@router.post("/holidays/", response_model=dict)
+def add_holiday(
+    request: HolidayCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Enforce role: only Admin or HR can add holidays
+    role_val = get_role_value(current_user.role) if hasattr(current_user.role, "value") else str(current_user.role)
+    if role_val not in ["admin", "hr"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Only Admin or HR can add official holidays.")
+        
+    # Check if holiday on this date already exists
+    existing = db.query(Holiday).filter(Holiday.date == request.date).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"A holiday '{existing.name}' already exists on this date ({request.date}).")
+        
+    holiday = Holiday(
+        name=request.name,
+        date=request.date,
+        type=request.type
+    )
+    db.add(holiday)
+    db.commit()
+    db.refresh(holiday)
+    return {
+        "message": "Holiday added successfully",
+        "holiday": {
+            "id": holiday.id,
+            "name": holiday.name,
+            "date": str(holiday.date),
+            "type": holiday.type
+        }
+    }
+
+
+class HolidayUpdate(BaseModel):
+    name: Optional[str] = None
+    date: Optional[date] = None
+    type: Optional[str] = None
+
+@router.put("/holidays/{holiday_id}", response_model=dict)
+def update_holiday(
+    holiday_id: int,
+    request: HolidayUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Enforce role: only Admin or HR can edit holidays
+    role_val = get_role_value(current_user.role) if hasattr(current_user.role, "value") else str(current_user.role)
+    if role_val not in ["admin", "hr"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Only Admin or HR can edit official holidays.")
+        
+    holiday = db.query(Holiday).filter(Holiday.id == holiday_id).first()
+    if not holiday:
+        raise HTTPException(status_code=404, detail="Holiday not found")
+        
+    if request.name is not None:
+        holiday.name = request.name
+        
+    if request.date is not None:
+        # Check if another holiday on this date already exists
+        existing = db.query(Holiday).filter(Holiday.date == request.date, Holiday.id != holiday_id).first()
+        if existing:
+            raise HTTPException(status_code=400, detail=f"Another holiday '{existing.name}' already exists on this date ({request.date}).")
+        holiday.date = request.date
+        
+    if request.type is not None:
+        holiday.type = request.type
+        
+    db.commit()
+    db.refresh(holiday)
+    return {
+        "message": "Holiday updated successfully",
+        "holiday": {
+            "id": holiday.id,
+            "name": holiday.name,
+            "date": str(holiday.date),
+            "type": holiday.type
+        }
+    }
 
 
 # ===== DYNAMIC GEOFENCE SETTINGS =====
@@ -558,7 +759,7 @@ def update_geofence(
     current_user: User = Depends(get_current_user)
 ):
     # Restrict to Admin or HR role
-    if current_user.role.value not in ["admin", "hr"]:
+    if get_role_value(current_user.role) not in ["admin", "hr"]:
         raise HTTPException(status_code=403, detail="Forbidden: Only Admins or HR can update the office boundary.")
     
     updated = update_org_coordinates(db, req.latitude, req.longitude, req.radius)
@@ -572,4 +773,346 @@ def update_geofence(
         "district": geo_info["district"],
         "state": geo_info["state"]
     }
+
+
+# ===== COMPENSATORY OFF (COMP-OFF) ENDPOINTS =====
+
+@router.get("/compoff/rule", response_model=CompOffRuleResponse)
+def get_compoff_rule(db: Session = Depends(get_db)):
+    rule = db.query(CompOffRule).filter(CompOffRule.is_active == 1).first()
+    if not rule:
+        # Fallback to creating a default rule if not found
+        rule = CompOffRule(standard_working_hours=8.0, min_overtime_hours=2.0)
+        db.add(rule)
+        db.commit()
+        db.refresh(rule)
+    return rule
+
+
+@router.put("/compoff/rule", response_model=CompOffRuleResponse)
+def update_compoff_rule(
+    req: CompOffRuleUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if get_role_value(current_user.role) not in ["admin", "hr", "manager"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Only HR and Managers can update comp-off rules.")
+    
+    rule = db.query(CompOffRule).filter(CompOffRule.is_active == 1).first()
+    if not rule:
+        rule = CompOffRule()
+        db.add(rule)
+    
+    if req.standard_working_hours is not None:
+        rule.standard_working_hours = req.standard_working_hours
+    if req.min_overtime_hours is not None:
+        rule.min_overtime_hours = req.min_overtime_hours
+        
+    db.commit()
+    db.refresh(rule)
+    return rule
+
+
+@router.get("/compoff/eligible-dates")
+def get_eligible_overtime_dates(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_employee: Employee = Depends(get_current_employee)
+):
+    rule = db.query(CompOffRule).filter(CompOffRule.is_active == 1).first()
+    min_ot = rule.min_overtime_hours if rule else 2.0
+    
+    # Get all attendance records of this employee where overtime_hours >= min_ot
+    records = db.query(Attendance).filter(
+        Attendance.employee_id == current_employee.id,
+        Attendance.overtime_hours >= min_ot
+    ).all()
+    
+    # Filter out dates where an active comp-off request already exists (either pending or approved)
+    existing_requests = db.query(CompOffRequest).filter(
+        CompOffRequest.employee_id == current_employee.id,
+        CompOffRequest.status.in_(["pending", "approved"])
+    ).all()
+    requested_dates = {req.attendance_date for req in existing_requests}
+    
+    eligible = []
+    for r in records:
+        if r.date not in requested_dates:
+            eligible.append({
+                "date": str(r.date),
+                "work_hours": r.work_hours,
+                "overtime_hours": r.overtime_hours,
+                "notes": r.notes
+            })
+    return eligible
+
+
+@router.post("/compoff/request", response_model=CompOffRequestResponse)
+def create_compoff_request(
+    req: CompOffRequestCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_employee: Employee = Depends(get_current_employee)
+):
+    # Check if an active request already exists for this date
+    existing = db.query(CompOffRequest).filter(
+        CompOffRequest.employee_id == current_employee.id,
+        CompOffRequest.attendance_date == req.attendance_date,
+        CompOffRequest.status.in_(["pending", "approved"])
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="A comp-off request already exists for this date.")
+        
+    # Get attendance record to verify overtime hours
+    attendance = db.query(Attendance).filter(
+        Attendance.employee_id == current_employee.id,
+        Attendance.date == req.attendance_date
+    ).first()
+    if not attendance:
+        raise HTTPException(status_code=400, detail="No attendance record found for this date.")
+        
+    rule = db.query(CompOffRule).filter(CompOffRule.is_active == 1).first()
+    min_ot = rule.min_overtime_hours if rule else 2.0
+    
+    if (attendance.overtime_hours or 0) < min_ot:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Attendance record on this date has {attendance.overtime_hours or 0} overtime hours. The minimum required threshold is {min_ot} hours."
+        )
+        
+    compoff = CompOffRequest(
+        employee_id=current_employee.id,
+        attendance_date=req.attendance_date,
+        working_hours=attendance.work_hours,
+        overtime_hours=attendance.overtime_hours,
+        reason=req.reason
+    )
+    db.add(compoff)
+    db.commit()
+    db.refresh(compoff)
+    
+    # Notify Manager and HR
+    try:
+        from app.routers.notifications import create_notification
+        
+        # 1. Notify Reporting Manager (if set)
+        if current_employee.reporting_manager_id:
+            mgr = db.query(Employee).filter(Employee.id == current_employee.reporting_manager_id).first()
+            if mgr and mgr.user_id:
+                create_notification(
+                    db=db,
+                    user_id=mgr.user_id,
+                    title="Comp-off Approval Pending",
+                    message=f"{current_employee.full_name} has requested a comp-off credit for {req.attendance_date}.",
+                    type="action",
+                    link="/attendance/leaves"
+                )
+
+        # 2. Notify HR/Admin
+        privileged = db.query(User).filter(User.role.in_([UserRole.ADMIN, UserRole.HR])).all()
+        for p_user in privileged:
+            create_notification(
+                db=db,
+                user_id=p_user.id,
+                title="Comp-off requested (Admin Alert)",
+                message=f"{current_employee.full_name} has requested a comp-off credit for {req.attendance_date}.",
+                type="info",
+                link="/attendance/leaves"
+            )
+    except Exception as e:
+        pass
+        
+    resp = CompOffRequestResponse.model_validate(compoff)
+    resp.employee_name = current_employee.full_name
+    return resp
+
+
+@router.get("/compoff/my-requests", response_model=list[CompOffRequestResponse])
+def get_my_compoff_requests(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_employee: Employee = Depends(get_current_employee)
+):
+    requests = db.query(CompOffRequest).filter(
+        CompOffRequest.employee_id == current_employee.id
+    ).order_by(CompOffRequest.created_at.desc()).all()
+    
+    result = []
+    for r in requests:
+        resp = CompOffRequestResponse.model_validate(r)
+        resp.employee_name = current_employee.full_name
+        result.append(resp)
+    return result
+
+
+@router.get("/compoff/pending-approvals", response_model=list[CompOffRequestResponse])
+def get_pending_compoff_approvals(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_employee: Employee = Depends(get_current_employee)
+):
+    # Managers see requests where manager_status == 'pending' and the requester reports to them
+    # HRs and Admins see requests where hr_status == 'pending'
+    query = db.query(CompOffRequest).filter(CompOffRequest.status == "pending")
+    requests = []
+    
+    if get_role_value(current_user.role) in ["admin", "hr"]:
+        # HR/Admin can see all pending requests
+        requests = query.all()
+    elif get_role_value(current_user.role) == "manager":
+        # Managers only see requests from their direct reports where manager_status is pending
+        direct_reports = db.query(Employee.id).filter(Employee.reporting_manager_id == current_employee.id).all()
+        report_ids = [d[0] for d in direct_reports]
+        requests = query.filter(
+            CompOffRequest.employee_id.in_(report_ids),
+            CompOffRequest.manager_status == "pending"
+        ).all()
+        
+    # Pre-fetch employee names
+    employees = db.query(Employee).all()
+    emp_map = {e.id: e.full_name for e in employees}
+    
+    result = []
+    for r in requests:
+        resp = CompOffRequestResponse.model_validate(r)
+        resp.employee_name = emp_map.get(r.employee_id, "Unknown")
+        result.append(resp)
+    return result
+
+
+@router.post("/compoff/action/{request_id}", response_model=CompOffRequestResponse)
+def action_compoff_request(
+    request_id: int,
+    action_req: CompOffRequestAction,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_employee: Employee = Depends(get_current_employee)
+):
+    req = db.query(CompOffRequest).filter(CompOffRequest.id == request_id).first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+        
+    action = action_req.action.lower()
+    if req.status != "pending":
+        if action == "reject" and req.status == "approved":
+            pass
+        else:
+            raise HTTPException(status_code=400, detail="This request has already been finalized.")
+        
+    # Verify authorization: is user a Manager or HR?
+    is_hr_or_admin = get_role_value(current_user.role) in ["admin", "hr"]
+    is_manager = get_role_value(current_user.role) == "manager"
+    
+    requester = db.query(Employee).filter(Employee.id == req.employee_id).first()
+    if not requester:
+        raise HTTPException(status_code=400, detail="Requester employee not found")
+        
+    is_reporting_manager = (requester.reporting_manager_id is not None) and (requester.reporting_manager_id == current_employee.id)
+    
+    if not (is_hr_or_admin or is_reporting_manager):
+        raise HTTPException(status_code=403, detail="Forbidden: You are not authorized to approve this request.")
+        
+    # Apply action
+    if action == "reject":
+        if req.status == "approved":
+            requester.comp_off_balance = max(0.0, (requester.comp_off_balance or 0.0) - 1.0)
+            
+        req.status = "rejected"
+        if is_hr_or_admin:
+            req.hr_status = "rejected"
+            req.hr_id = current_user.id
+            req.hr_action_at = datetime.utcnow()
+        if is_reporting_manager or (is_hr_or_admin and requester.reporting_manager_id is None):
+            req.manager_status = "rejected"
+            req.manager_id = current_employee.id
+            req.manager_action_at = datetime.utcnow()
+    elif action == "approve":
+        # Handle reporting manager approval
+        if is_reporting_manager:
+            req.manager_status = "approved"
+            req.manager_id = current_employee.id
+            req.manager_action_at = datetime.utcnow()
+        # Handle HR/Admin approval
+        if is_hr_or_admin:
+            req.hr_status = "approved"
+            req.hr_id = current_user.id
+            req.hr_action_at = datetime.utcnow()
+            
+            # If the requester has no reporting manager, HR approval can automatically cover manager status
+            if requester.reporting_manager_id is None:
+                req.manager_status = "approved"
+                req.manager_id = current_employee.id
+                req.manager_action_at = datetime.utcnow()
+                
+        # If both approved, finalize request and add comp-off credit to balance!
+        if req.manager_status == "approved" and req.hr_status == "approved":
+            req.status = "approved"
+            requester.comp_off_balance = (requester.comp_off_balance or 0.0) + 1.0
+            
+            # Notify employee
+            try:
+                from app.routers.notifications import create_notification
+                if requester.user_id:
+                    create_notification(
+                        db=db,
+                        user_id=requester.user_id,
+                        title="Comp-off Request Approved",
+                        message=f"Your comp-off request for {req.attendance_date} has been fully approved. 1 day has been credited to your balance.",
+                        type="success",
+                        link="/attendance/leaves"
+                    )
+            except Exception as e:
+                pass
+    else:
+        raise HTTPException(status_code=400, detail="Invalid action. Must be 'approve' or 'reject'.")
+        
+    db.commit()
+    db.refresh(req)
+    
+    resp = CompOffRequestResponse.model_validate(req)
+    resp.employee_name = requester.full_name
+    return resp
+
+
+@router.post("/compoff/cancel/{request_id}", response_model=CompOffRequestResponse)
+def cancel_compoff_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_employee: Employee = Depends(get_current_employee)
+):
+    req = db.query(CompOffRequest).filter(CompOffRequest.id == request_id).first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+        
+    if req.status == "cancelled":
+        raise HTTPException(status_code=400, detail="This request is already cancelled.")
+        
+    # Verify authorization: owner, reporting manager, or HR/Admin
+    requester = db.query(Employee).filter(Employee.id == req.employee_id).first()
+    if not requester:
+        raise HTTPException(status_code=400, detail="Requester employee not found")
+        
+    is_owner = (requester.id == current_employee.id)
+    is_hr_or_admin = get_role_value(current_user.role) in ["admin", "hr"]
+    is_reporting_manager = (requester.reporting_manager_id is not None) and (requester.reporting_manager_id == current_employee.id)
+    
+    if not (is_owner or is_hr_or_admin or is_reporting_manager):
+        raise HTTPException(status_code=403, detail="Forbidden: You are not authorized to cancel this request.")
+        
+    # If the request was already approved, deduct 1.0 day from balance
+    if req.status == "approved":
+        requester.comp_off_balance = max(0.0, (requester.comp_off_balance or 0.0) - 1.0)
+        
+    req.status = "cancelled"
+    req.manager_status = "cancelled"
+    req.hr_status = "cancelled"
+    
+    db.commit()
+    db.refresh(req)
+    
+    resp = CompOffRequestResponse.model_validate(req)
+    resp.employee_name = requester.full_name
+    return resp
+
 

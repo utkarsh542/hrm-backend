@@ -97,3 +97,32 @@ class GeofenceSetting(Base):
     longitude = Column(Float, nullable=False)
     radius = Column(Float, default=100.0)
 
+
+class CompOffRule(Base):
+    __tablename__ = "comp_off_rules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    standard_working_hours = Column(Float, default=8.0)
+    min_overtime_hours = Column(Float, default=2.0)
+    is_active = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class CompOffRequest(Base):
+    __tablename__ = "comp_off_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(Integer, nullable=False, index=True)
+    attendance_date = Column(Date, nullable=False)
+    working_hours = Column(Float, default=0.0)
+    overtime_hours = Column(Float, default=0.0)
+    reason = Column(Text, nullable=True)
+    manager_status = Column(String, default="pending")
+    manager_id = Column(Integer, nullable=True)
+    manager_action_at = Column(DateTime, nullable=True)
+    hr_status = Column(String, default="pending")
+    hr_id = Column(Integer, nullable=True)
+    hr_action_at = Column(DateTime, nullable=True)
+    status = Column(String, default="pending")
+    created_at = Column(DateTime, default=datetime.utcnow)
+

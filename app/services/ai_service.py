@@ -11,6 +11,9 @@ from datetime import date
 from typing import List, Dict, Optional
 import urllib.request
 import urllib.error
+import logging
+
+logger = logging.getLogger("uvicorn")
 
 from app.config import settings
 
@@ -42,22 +45,16 @@ _AI_CACHE = _load_cache()
 
 if _OPENROUTER_KEY:
     _AI_ENABLED = True
-    print(f"[AI] OpenRouter Free LLM enabled (model: {_MODEL})")
+    logger.info(f"[AI] OpenRouter Free LLM enabled (model: {_MODEL})")
 else:
-    print("[AI] No OPENROUTER_API_KEY — running in rule-based fallback mode")
+    logger.warning("[AI] No OPENROUTER_API_KEY — running in rule-based fallback mode")
 
 
 def _call_openrouter(prompt: str, system: str, max_tokens: int = 1024, json_mode: bool = False) -> str:
-    """Send request to OpenRouter API with Exact Cache layer."""
+    """Send request to OpenRouter API."""
     if not _AI_ENABLED or not _OPENROUTER_KEY:
+        logger.info("[AI] OpenRouter not enabled or key missing. Returning empty string.")
         return ""
-    
-    # Calculate exact cache key based on stable cryptographic hash of request parameters
-    cache_str = f"{prompt}:{system}:{max_tokens}:{json_mode}"
-    cache_key = hashlib.md5(cache_str.encode("utf-8")).hexdigest()
-    if cache_key in _AI_CACHE:
-        print("[AI] Exact Cache Hit — returning cached completion instantly (0ms)")
-        return _AI_CACHE[cache_key]
     
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
@@ -76,6 +73,11 @@ def _call_openrouter(prompt: str, system: str, max_tokens: int = 1024, json_mode
         "temperature": 0.3 if json_mode else 0.4,
         "max_tokens": max_tokens
     }
+    
+    logger.info(f"[AI] Requesting model: {_MODEL}")
+    logger.info(f"[AI] System Prompt: {system[:200]}...")
+    logger.info(f"[AI] User Prompt: {prompt[:300]}...")
+    logger.info(f"[AI] Max Tokens: {max_tokens} | JSON Mode: {json_mode}")
         
     req = urllib.request.Request(
         url,
@@ -85,47 +87,62 @@ def _call_openrouter(prompt: str, system: str, max_tokens: int = 1024, json_mode
     )
     
     try:
+        logger.info(f"[AI] Sending HTTP POST to OpenRouter: {url}")
         with urllib.request.urlopen(req, timeout=15) as response:
             res = json.loads(response.read().decode("utf-8"))
+            logger.info(f"[AI] OpenRouter HTTP response received. Status: {response.status}")
             if "choices" in res and len(res["choices"]) > 0:
-                content = res["choices"][0]["message"]["content"].strip()
-                if content:
-                    _AI_CACHE[cache_key] = content
-                    _save_cache(_AI_CACHE)
-                return content
+                msg = res["choices"][0].get("message", {})
+                content_raw = msg.get("content")
+                if content_raw is not None:
+                    content = content_raw.strip()
+                    logger.info(f"[AI] Completion output length: {len(content)} chars.")
+                    logger.info(f"[AI] Completion content: {content[:200]}...")
+                    return content
+            
+            logger.warning(f"[AI] OpenRouter API choices missing or empty. Response keys: {list(res.keys())}")
+            if "error" in res:
+                logger.error(f"[AI] OpenRouter error payload details: {res['error']}")
+            else:
+                logger.info(f"[AI] Full Response payload: {res}")
             return ""
     except urllib.error.HTTPError as e:
         err_body = e.read().decode("utf-8") if e.fp else ""
-        print(f"[AI] OpenRouter HTTP Error {e.code}: {err_body}")
+        logger.error(f"[AI] OpenRouter HTTP Error {e.code}: {err_body}")
         if e.code == 429:
             raise Exception("429 RESOURCE_EXHAUSTED: OpenRouter rate limit exceeded.")
         raise Exception(f"OpenRouter HTTP {e.code}: {e.reason}")
     except Exception as e:
-        print(f"[AI] OpenRouter error: {e}")
+        logger.error(f"[AI] OpenRouter connection/processing error: {e}")
         raise e
 
 
 def _chat(prompt: str, system: str = "You are an expert HR AI assistant. Always respond with valid JSON only. No markdown formatting, no code fences, just raw JSON.", max_tokens: int = 1024) -> dict:
     """Call OpenRouter and parse JSON response."""
     try:
+        logger.info("[AI] Starting JSON Chat request.")
         text = _call_openrouter(prompt, system, max_tokens, json_mode=True)
         if not text:
+            logger.info("[AI] Chat request returned empty string.")
             return {}
         # Clean markdown fences if present
         if text.startswith("```"):
             text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-        return json.loads(text)
+        parsed_json = json.loads(text)
+        logger.info(f"[AI] JSON successfully parsed. Keys: {list(parsed_json.keys())}")
+        return parsed_json
     except Exception as e:
-        print(f"[AI] _chat error: {e}")
+        logger.error(f"[AI] _chat error parsing response: {e}")
         return {}
 
 
 def _chat_text(prompt: str, system: str = "You are an intelligent HR assistant.", max_tokens: int = 512) -> str:
     """Call OpenRouter and return plain text response."""
     try:
+        logger.info("[AI] Starting Plain Text Chat request.")
         return _call_openrouter(prompt, system, max_tokens, json_mode=False)
     except Exception as e:
-        print(f"[AI] _chat_text error: {e}")
+        logger.error(f"[AI] _chat_text error: {e}")
         raise e
 
 
@@ -133,10 +150,12 @@ def _chat_text(prompt: str, system: str = "You are an intelligent HR assistant."
 # RESUME SCREENING
 # ─────────────────────────────────────────────
 def screen_resume(candidate_skills: str, job_requirements: str, experience_years: float) -> dict:
+    logger.info(f"[AI] screen_resume called (experience: {experience_years} years)")
     candidate_skills = candidate_skills or ""
     job_requirements = job_requirements or ""
 
     if _AI_ENABLED:
+        logger.info("[AI] screen_resume: calling OpenRouter LLM...")
         result = _chat(f"""Evaluate this job candidate objectively.
 
 Candidate Skills: {candidate_skills}
@@ -165,8 +184,11 @@ Return JSON with exactly these keys:
                 f"Areas of Concern: {'; '.join(weaknesses)}\n"
                 f"Recommendation: {recommendation}"
             )
+            logger.info(f"[AI] screen_resume: LLM evaluation parsed successfully. Score: {score}")
             return {"score": score, "summary": summary, "skill_match": float(skill_match)}
+        logger.warning("[AI] screen_resume: OpenRouter returned invalid response. Falling back.")
 
+    logger.info("[AI] screen_resume: running rule-based fallback calculation...")
     # ── Rule-based fallback ──
     cand_list = [s.strip().lower() for s in candidate_skills.split(",") if s.strip()]
     job_list = [s.strip().lower() for s in job_requirements.split(",") if s.strip()]
@@ -199,7 +221,9 @@ Return JSON with exactly these keys:
 # INTERVIEW QUESTIONS
 # ─────────────────────────────────────────────
 def generate_interview_questions(job_title: str, interview_type: str, skills: str) -> List[Dict]:
+    logger.info(f"[AI] generate_interview_questions called for '{job_title}' (type: {interview_type})")
     if _AI_ENABLED:
+        logger.info("[AI] generate_interview_questions: calling OpenRouter LLM...")
         result = _chat(f"""Generate 5 interview questions for a {job_title} role.
 Interview type: {interview_type}
 Key skills: {skills}
@@ -212,8 +236,11 @@ Return JSON:
   ]
 }}""")
         if result and "questions" in result and len(result["questions"]) >= 3:
+            logger.info(f"[AI] generate_interview_questions: successfully generated {len(result['questions'])} questions.")
             return result["questions"][:5]
+        logger.warning("[AI] generate_interview_questions: LLM returned empty or invalid response. Falling back.")
 
+    logger.info("[AI] generate_interview_questions: using static bank fallback questions...")
     # ── Static fallback ──
     banks = {
         "technical": [
@@ -248,11 +275,13 @@ Return JSON:
 # INTERVIEW EVALUATION
 # ─────────────────────────────────────────────
 def evaluate_interview(responses: List[str], questions: List[Dict]) -> Dict:
+    logger.info(f"[AI] evaluate_interview called with {len(responses)} responses.")
     if _AI_ENABLED and responses and questions:
         qa_pairs = "\n".join(
             f"Q{i+1}: {q.get('question','')}\nA{i+1}: {responses[i] if i < len(responses) else 'No answer'}"
             for i, q in enumerate(questions)
         )
+        logger.info("[AI] evaluate_interview: calling OpenRouter LLM...")
         result = _chat(f"""Evaluate this interview objectively. Score each dimension 1.0-5.0.
 
 {qa_pairs}
@@ -273,13 +302,16 @@ Return JSON:
         if result and "scores" in result:
             scores = result["scores"]
             overall = round(sum(scores.values()) / len(scores), 1)
+            logger.info(f"[AI] evaluate_interview: LLM evaluation parsed successfully. Overall: {overall}")
             return {
                 "scores": scores,
                 "overall_score": result.get("overall_score", overall),
                 "feedback": result.get("feedback", "Evaluation completed."),
                 "recommendation": result.get("recommendation", "next_round"),
             }
+        logger.warning("[AI] evaluate_interview: LLM returned empty or invalid response. Falling back.")
 
+    logger.info("[AI] evaluate_interview: running deterministic fallback evaluator...")
     # ── Deterministic fallback (not random) ──
     base = 3.5
     scores = {
@@ -303,7 +335,9 @@ Return JSON:
 # JOB DESCRIPTION GENERATOR
 # ─────────────────────────────────────────────
 def generate_job_description(title: str, department: str, experience_min: int, experience_max: int, skills: str) -> dict:
+    logger.info(f"[AI] generate_job_description called for '{title}' (dept: {department})")
     if _AI_ENABLED:
+        logger.info("[AI] generate_job_description: calling OpenRouter LLM...")
         result = _chat(f"""Write a professional job description for:
 Title: {title}
 Department: {department}
@@ -319,8 +353,11 @@ Return JSON:
   "benefits": ["...", "...", "..."]
 }}""")
         if result and "description" in result:
+            logger.info("[AI] generate_job_description: LLM generated description successfully.")
             return result
+        logger.warning("[AI] generate_job_description: LLM returned empty or invalid response. Falling back.")
 
+    logger.info("[AI] generate_job_description: returning static job description template...")
     return {
         "description": f"We are looking for a talented {title} to join our {department} team. You will work on challenging problems and collaborate with a high-performing team.",
         "responsibilities": [
@@ -351,7 +388,9 @@ def generate_performance_review(
     bullet_points: str,
     ratings: dict,
 ) -> dict:
+    logger.info(f"[AI] generate_performance_review called for employee: {employee_name} ({designation})")
     if _AI_ENABLED:
+        logger.info("[AI] generate_performance_review: calling OpenRouter LLM...")
         result = _chat(f"""Write a professional performance review for:
 Employee: {employee_name}
 Role: {designation}
@@ -366,8 +405,11 @@ Return JSON:
   "recommendation": "<promote|increment|no_change|pip>"
 }}""")
         if result and "manager_review" in result:
+            logger.info("[AI] generate_performance_review: LLM generated review successfully.")
             return result
+        logger.warning("[AI] generate_performance_review: LLM returned empty or invalid response. Falling back.")
 
+    logger.info("[AI] generate_performance_review: returning static review template fallback...")
     return {
         "manager_review": f"{employee_name} has demonstrated consistent performance in their role as {designation}. {bullet_points}",
         "strengths": "Shows strong technical aptitude and collaborative spirit.",
@@ -380,6 +422,7 @@ Return JSON:
 # ATTRITION RISK PREDICTION
 # ─────────────────────────────────────────────
 def calculate_attrition_risk(employee, reviews: list, leaves: list, attendance_count: int, skip_llm: bool = False) -> dict:
+    logger.info(f"[AI] calculate_attrition_risk called for {employee.full_name} ({employee.designation})")
     risk_score = 0
     factors = []
 
@@ -431,14 +474,18 @@ def calculate_attrition_risk(employee, reviews: list, leaves: list, attendance_c
     # LLM explanation
     explanation = ""
     if not skip_llm and _AI_ENABLED and factors:
+        logger.info("[AI] calculate_attrition_risk: querying LLM for retention advice...")
         result = _chat(f"""An employee named {employee.full_name} ({employee.designation}) has an attrition risk score of {risk_score}/100.
 Risk factors identified: {'; '.join(factors)}
 
 Write a 2-sentence HR recommendation on how to retain this employee.
 Return JSON: {{"recommendation": "..."}}""")
         explanation = result.get("recommendation", "")
+        if explanation:
+            logger.info("[AI] calculate_attrition_risk: LLM advice generated successfully.")
 
     if not explanation:
+        logger.info("[AI] calculate_attrition_risk: using static risk level fallback description.")
         if risk_level == "high":
             explanation = "Immediate manager check-in and compensation review recommended."
         elif risk_level == "medium":
@@ -458,12 +505,24 @@ Return JSON: {{"recommendation": "..."}}""")
 # HR COPILOT — Natural Language Query
 # ─────────────────────────────────────────────
 def hr_copilot_chat(message: str, context: dict) -> str:
+    logger.info(f"[AI] hr_copilot_chat received message: '{message}'")
     if not _AI_ENABLED:
+        logger.warning("[AI] hr_copilot_chat: AI is not enabled. Prompting configuration.")
         return "AI Copilot requires an OPENROUTER_API_KEY environment variable. Please set it to enable this feature. Get a free key at https://openrouter.ai/keys"
 
     system = """You are an intelligent HR assistant for an HRMS system called TechCorp HRMS.
 You have access to real HR data provided in the context. Answer questions naturally and helpfully.
-Be concise, professional, and data-driven. If data is not in context, say so honestly."""
+Be concise, professional, and data-driven. If data is not in context, say so honestly.
+
+STRICT GUIDELINES:
+1. DO NOT HALLUCINATE: Do not make up facts, numbers, or events. Only use the provided context.
+2. CURRENT USER CONTEXT: The employee asking the question is defined in the 'current_user' block. When the user uses 'I', 'me', 'my', 'mine', or asks about their own details, refer directly to the 'current_user' data block.
+3. LEAVE BALANCE VS LEAVE REQUESTS:
+   - "Leave left" or "leave balance" refers to remaining leaves. Answer this using 'casual_leave_balance', 'sick_leave_balance', and 'earned_leave_balance' from the 'current_user' block.
+   - "Leave requests" refers to past or pending leave applications, which are listed in 'current_user_leave_requests' or 'pending_leaves_detail'.
+4. If a query is personal (e.g. "how many leave left"), immediately look up the current user's leave balances in 'current_user' and list them clearly (e.g. Casual: X, Sick: Y, Earned: Z).
+5. ORGANIZATIONAL / EMPLOYEE QUERIES: If the user asks about other employees or general organization statistics (e.g., headcount, manager hierarchies, departments, email addresses, joining dates), refer to the 'employee_list' block. This list contains the complete list of employees, including active and inactive status, their human-readable department names, reporting manager names, emails, joining dates, and leave balances (subject to role visibility). Match names, emails, or designations precisely to retrieve information about specific colleagues.
+6. CONFIDENTIAL INFORMATION SECURITY: Under no circumstances should you ever reveal or make up confidential record data such as PAN numbers, Aadhaar numbers, credentials, bank account numbers, bank routing/IFSC codes, or CTC/salary/compensation details for any employee (including the requester). If the user asks for these details (e.g., "What is my PAN number?", "What is Sanjay's salary?", "What is my CTC?", or "Show me Suresh's bank details"), you must decline to answer, state that this is confidential data not accessible in chat, and instruct them to check their official Profile or Salary/Documents section instead. Do not try to guess or hallucinate these values."""
 
     context_str = json.dumps(context, indent=2, default=str)
     prompt = f"""HR Data Context:
@@ -474,9 +533,15 @@ User Question: {message}
 Answer the question based on the data above. Be specific with numbers and names."""
 
     try:
+        logger.info("[AI] hr_copilot_chat: sending query to LLM...")
         result = _chat_text(prompt, system, max_tokens=512)
-        return result or "Sorry, I couldn't process that request. Please try again."
+        if result:
+            logger.info("[AI] hr_copilot_chat response generated successfully.")
+            return result
+        logger.warning("[AI] hr_copilot_chat: LLM returned empty string. Returning default warning.")
+        return "Sorry, I couldn't process that request. Please try again."
     except Exception as e:
+        logger.error(f"[AI] hr_copilot_chat error: {e}")
         err_msg = str(e)
         if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "quota" in err_msg.lower():
             return "I have temporarily exceeded the OpenRouter API rate limits (RESOURCE_EXHAUSTED). Please wait a moment and try again shortly!"
@@ -488,7 +553,9 @@ Answer the question based on the data above. Be specific with numbers and names.
 # ─────────────────────────────────────────────
 def parse_resume_text(resume_text: str) -> dict:
     """Parse extracted resume text into structured candidate data using AI."""
+    logger.info(f"[AI] parse_resume_text called. Length: {len(resume_text) if resume_text else 0} characters.")
     if _AI_ENABLED and resume_text:
+        logger.info("[AI] parse_resume_text: calling OpenRouter LLM resume parser...")
         result = _chat(f"""Extract structured information from this resume text.
 Be thorough and accurate. If a field is not found, use null.
 
@@ -510,8 +577,11 @@ Return JSON:
   "summary": "<2-3 sentence professional summary>"
 }}""", max_tokens=1024)
         if result and "full_name" in result:
+            logger.info(f"[AI] parse_resume_text successful. Name found: {result.get('full_name')}")
             return result
+        logger.warning("[AI] parse_resume_text: LLM returned empty or invalid response. Falling back.")
 
+    logger.info("[AI] parse_resume_text: returning empty structured fallback schema...")
     # Basic fallback — return empty structured response
     return {
         "full_name": "",
@@ -533,7 +603,9 @@ Return JSON:
 # ─────────────────────────────────────────────
 def generate_onboarding_plan(employee_name: str, designation: str, department: str) -> dict:
     """Generate a personalized onboarding plan for a new employee."""
+    logger.info(f"[AI] generate_onboarding_plan called for {employee_name} ({designation} in {department})")
     if _AI_ENABLED:
+        logger.info("[AI] generate_onboarding_plan: calling OpenRouter LLM onboarding generator...")
         result = _chat(f"""Create a detailed 30-day onboarding plan for:
 Employee: {employee_name}
 Role: {designation}
@@ -554,8 +626,11 @@ Return JSON:
   ]
 }}""", max_tokens=2048)
         if result and "tasks" in result:
+            logger.info(f"[AI] generate_onboarding_plan: LLM generated onboarding plan with {len(result['tasks'])} tasks.")
             return result
+        logger.warning("[AI] generate_onboarding_plan: LLM returned empty or invalid response. Falling back.")
 
+    logger.info("[AI] generate_onboarding_plan: using static department onboarding template fallback...")
     # Fallback plan
     return {
         "plan_name": f"30-Day Onboarding: {designation}",
@@ -584,7 +659,9 @@ Return JSON:
 # ─────────────────────────────────────────────
 def analyze_survey_sentiment(responses: List[str]) -> dict:
     """Analyze sentiment of survey responses."""
+    logger.info(f"[AI] analyze_survey_sentiment called with {len(responses) if responses else 0} responses.")
     if _AI_ENABLED and responses:
+        logger.info("[AI] analyze_survey_sentiment: calling OpenRouter LLM sentiment analysis...")
         result = _chat(f"""Analyze the sentiment of these employee survey responses:
 {json.dumps(responses[:20])}
 
@@ -598,7 +675,11 @@ Return JSON:
   "summary": "<2-3 sentence summary of the feedback>"
 }}""")
         if result and "sentiment_score" in result:
+            logger.info(f"[AI] analyze_survey_sentiment: LLM scored sentiment as: {result.get('sentiment_score')}")
             return result
+        logger.warning("[AI] analyze_survey_sentiment: LLM returned empty or invalid response. Falling back.")
+
+    logger.info("[AI] analyze_survey_sentiment: using static fallback sentiment scores...")
 
     return {
         "overall_sentiment": "neutral",
@@ -612,6 +693,7 @@ Return JSON:
 
 def detect_burnout_risk(employee_name: str, overtime_hours: float, leave_days: int, mood_scores: List[int]) -> dict:
     """Detect burnout risk based on multiple signals."""
+    logger.info(f"[AI] detect_burnout_risk called for {employee_name}")
     risk_score = 0
     factors = []
 
@@ -640,6 +722,7 @@ def detect_burnout_risk(employee_name: str, overtime_hours: float, leave_days: i
 
     recommendation = ""
     if _AI_ENABLED and factors:
+        logger.info("[AI] detect_burnout_risk: querying LLM for burnout recommendation...")
         result = _chat(f"""Employee {employee_name} has burnout risk indicators:
 {'; '.join(factors)}
 Risk score: {risk_score}/100
@@ -647,8 +730,11 @@ Risk score: {risk_score}/100
 Provide a 2-sentence actionable recommendation for their manager.
 Return JSON: {{"recommendation": "..."}}""")
         recommendation = result.get("recommendation", "")
+        if recommendation:
+            logger.info("[AI] detect_burnout_risk: LLM recommendation generated successfully.")
 
     if not recommendation:
+        logger.info("[AI] detect_burnout_risk: using static rule-based risk recommendation.")
         if risk_level == "high":
             recommendation = "Urgent: Schedule a wellness check-in. Consider workload redistribution and mandatory time off."
         elif risk_level == "medium":
@@ -669,7 +755,9 @@ Return JSON: {{"recommendation": "..."}}""")
 # ─────────────────────────────────────────────
 def analyze_skill_gaps(employee_skills: List[str], role_requirements: List[str], designation: str) -> dict:
     """Analyze skill gaps for an employee vs their role requirements."""
+    logger.info(f"[AI] analyze_skill_gaps called for designation: {designation}")
     if _AI_ENABLED:
+        logger.info("[AI] analyze_skill_gaps: calling OpenRouter LLM gap analyzer...")
         result = _chat(f"""Analyze skill gaps for a {designation}:
 Current skills: {', '.join(employee_skills)}
 Required skills: {', '.join(role_requirements)}
@@ -686,8 +774,11 @@ Return JSON:
   "career_advice": "<1-2 sentence career development advice>"
 }}""")
         if result and "matched_skills" in result:
+            logger.info("[AI] analyze_skill_gaps: LLM response parsed successfully.")
             return result
+        logger.warning("[AI] analyze_skill_gaps: LLM returned empty or invalid response. Falling back.")
 
+    logger.info("[AI] analyze_skill_gaps: using simple list comparison fallback...")
     # Fallback
     emp_lower = [s.lower().strip() for s in employee_skills]
     req_lower = [s.lower().strip() for s in role_requirements]
@@ -709,7 +800,9 @@ Return JSON:
 # ─────────────────────────────────────────────
 def generate_workforce_insights(stats: dict) -> dict:
     """Generate AI insights from workforce data."""
+    logger.info("[AI] generate_workforce_insights called.")
     if _AI_ENABLED:
+        logger.info("[AI] generate_workforce_insights: calling OpenRouter LLM insight generator...")
         result = _chat(f"""Analyze this HR workforce data and generate actionable insights:
 {json.dumps(stats, default=str)}
 
@@ -722,8 +815,11 @@ Return JSON:
   "executive_summary": "<3-4 sentence executive summary of the workforce state>"
 }}""")
         if result and "insights" in result:
+            logger.info(f"[AI] generate_workforce_insights: LLM generated {len(result['insights'])} insights successfully.")
             return result
+        logger.warning("[AI] generate_workforce_insights: LLM returned empty or invalid response. Falling back.")
 
+    logger.info("[AI] generate_workforce_insights: returning basic default workforce insights...")
     return {
         "insights": [
             {"title": "Workforce Overview", "description": f"Total {stats.get('total_employees', 0)} employees across departments.", "type": "positive", "priority": "low"},
@@ -738,7 +834,9 @@ Return JSON:
 # ─────────────────────────────────────────────
 def assess_succession_readiness(employee_name: str, designation: str, target_role: str, performance_rating: float, tenure_years: float, skills: List[str]) -> dict:
     """Assess an employee's readiness for a target role."""
+    logger.info(f"[AI] assess_succession_readiness called for {employee_name} -> {target_role}")
     if _AI_ENABLED:
+        logger.info("[AI] assess_succession_readiness: calling OpenRouter LLM succession assessor...")
         result = _chat(f"""Assess succession readiness:
 Employee: {employee_name}
 Current Role: {designation}
@@ -759,8 +857,11 @@ Return JSON:
   "assessment": "<2-3 sentence assessment>"
 }}""")
         if result and "readiness" in result:
+            logger.info(f"[AI] assess_succession_readiness: LLM assessment parsed successfully. Readiness: {result.get('readiness')}")
             return result
+        logger.warning("[AI] assess_succession_readiness: LLM returned empty or invalid response. Falling back.")
 
+    logger.info("[AI] assess_succession_readiness: running mathematical assessment fallback logic...")
     # Fallback
     score = min(int(performance_rating * 15 + tenure_years * 5 + len(skills) * 2), 100)
     readiness = "ready_now" if score >= 75 else "1-2_years" if score >= 50 else "3+_years"
@@ -782,12 +883,15 @@ Return JSON:
 # ─────────────────────────────────────────────
 def extract_file_text(file_path: str) -> str:
     """Robustly extract plain text from PDF, DOCX, or TXT files."""
+    logger.info(f"[RAG] extract_file_text called for path: {file_path}")
     if not file_path or not os.path.exists(file_path):
+        logger.warning(f"[RAG] file_path is empty or does not exist: {file_path}")
         return ""
     
     ext = os.path.splitext(file_path)[1].lower()
     try:
         if ext == ".pdf":
+            logger.info("[RAG] Parsing PDF document using PyMuPDF...")
             import fitz
             doc = fitz.open(file_path)
             text = ""
@@ -795,19 +899,22 @@ def extract_file_text(file_path: str) -> str:
                 text += page.get_text()
             return text
         elif ext in [".docx", ".doc"]:
+            logger.info("[RAG] Parsing Word document using python-docx...")
             import docx
             doc = docx.Document(file_path)
             return "\n".join([p.text for p in doc.paragraphs])
         elif ext in [".txt", ".md", ".json", ".csv"]:
+            logger.info("[RAG] Parsing text-based document...")
             with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                 return f.read()
     except Exception as e:
-        print(f"[RAG] Error parsing {file_path}: {e}")
+        logger.error(f"[RAG] Error parsing {file_path}: {e}")
     return ""
 
 
 def search_documents_rag(query: str, db, employee_id: Optional[int] = None) -> str:
     """RAG Retrieval: Search all active documents (isolated by role), chunk them, and return matching context."""
+    logger.info(f"[RAG] search_documents_rag called for query: '{query}'")
     from app.models.document import Document, DocumentStatus
     
     # Clean query and extract key terms (ignoring standard stop words)
@@ -815,6 +922,7 @@ def search_documents_rag(query: str, db, employee_id: Optional[int] = None) -> s
     terms = [word.lower() for word in query.split() if word.isalnum() and word.lower() not in stop_words]
     
     if not terms:
+        logger.info("[RAG] Query terms list is empty after removing stop words.")
         return ""
         
     # Get active documents
@@ -823,6 +931,7 @@ def search_documents_rag(query: str, db, employee_id: Optional[int] = None) -> s
         doc_query = doc_query.filter((Document.employee_id == employee_id) | (Document.employee_id == None))
     
     documents = doc_query.all()
+    logger.info(f"[RAG] Found {len(documents)} active documents to scan.")
     
     scored_chunks = []
     for doc in documents:
@@ -856,11 +965,13 @@ def search_documents_rag(query: str, db, employee_id: Optional[int] = None) -> s
     scored_chunks.sort(key=lambda x: x["score"], reverse=True)
     top_chunks = scored_chunks[:3]
     
+    logger.info(f"[RAG] Top matching scored chunks found: {len(top_chunks)}")
     if not top_chunks:
         return ""
         
     context_blocks = []
     for ch in top_chunks:
+        logger.info(f"[RAG] Matched chunk from document '{ch['title']}' (Score: {ch['score']})")
         context_blocks.append(f"[Source Document: {ch['title']} ({ch['source']})]\n{ch['text']}")
         
     return "\n\n".join(context_blocks)

@@ -33,3 +33,5 @@ uploads/
 # PDFs (optional)
 *.pdf
 *.db
+receipts/
+resumes/

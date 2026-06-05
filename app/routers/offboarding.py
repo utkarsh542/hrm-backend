@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.offboarding import Resignation, ResignationStatus, Document
+from app.models.offboarding import Resignation, ResignationStatus
 from app.models.employee import Employee, Department, EmploymentStatus
 from app.schemas.schemas import ResignationCreate, ResignationUpdate, ResignationResponse
 from app.services.pdf_service import generate_experience_letter_pdf, generate_relieving_letter_pdf

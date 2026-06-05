@@ -11,6 +11,12 @@ class UserRole(str, enum.Enum):
     MANAGER = "manager"
     EMPLOYEE = "employee"
 
+    def __str__(self):
+        return self.value
+
+
+from sqlalchemy.ext.hybrid import hybrid_property
+
 
 class User(Base):
     __tablename__ = "users"
@@ -19,8 +25,31 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     full_name = Column(String, nullable=False)
-    role = Column(SAEnum(UserRole), default=UserRole.EMPLOYEE, nullable=False)
+    _role = Column("role", SAEnum(UserRole), default=UserRole.EMPLOYEE, nullable=False)
     is_active = Column(Boolean, default=True)
     avatar_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @hybrid_property
+    def role(self):
+        val = self._role
+        if isinstance(val, UserRole):
+            return val
+        if isinstance(val, str):
+            try:
+                return UserRole(val.lower())
+            except ValueError:
+                try:
+                    return UserRole[val.upper()]
+                except KeyError:
+                    return UserRole.EMPLOYEE
+        return UserRole.EMPLOYEE
+
+    @role.setter
+    def role(self, value):
+        self._role = value
+
+    @role.expression
+    def role(cls):
+        return cls._role

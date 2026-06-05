@@ -60,39 +60,159 @@ def copilot_chat(
     )
 
     # 2. Build a compact database context snapshot for the LLM
-    employees = db.query(Employee).filter(Employee.is_active == True).all()
+    employees = db.query(Employee).all()
+    from app.models.employee import Department
+    dept_map = {d.id: d.name for d in db.query(Department).all()}
+    mgr_map = {e.id: e.full_name for e in employees}
+    
     pending_leaves = db.query(LeaveRequest).filter(LeaveRequest.status == LeaveStatus.PENDING).all()
-    active_count = db.query(Employee).filter(Employee.employment_status == EmploymentStatus.ACTIVE).count()
-    on_notice = db.query(Employee).filter(Employee.employment_status == EmploymentStatus.ON_NOTICE).all()
+    active_count = db.query(Employee).filter(
+        Employee.employment_status == EmploymentStatus.ACTIVE,
+        Employee.is_active == True
+    ).count()
+    on_notice = db.query(Employee).filter(
+        Employee.employment_status == EmploymentStatus.ON_NOTICE,
+        Employee.is_active == True
+    ).all()
+    
+    # Personal context for the logged-in user
+    personal_leaves = db.query(LeaveRequest).filter(
+        LeaveRequest.employee_id == current_employee.id
+    ).order_by(LeaveRequest.created_at.desc()).limit(10).all()
+    
+    # 3. Retrieve today's attendance logs and personal attendance history
+    from datetime import date, timedelta
+    today = date.today()
+    today_attendance = db.query(Attendance).filter(Attendance.date == today).all()
+    today_checkins = []
+    for att in today_attendance:
+        emp = db.query(Employee).filter(Employee.id == att.employee_id).first()
+        emp_name = emp.full_name if emp else f"ID {att.employee_id}"
+        today_checkins.append({
+            "employee_name": emp_name,
+            "status": att.status.value if hasattr(att.status, "value") else str(att.status),
+            "check_in": att.check_in.strftime('%I:%M %p') if att.check_in else None,
+            "check_out": att.check_out.strftime('%I:%M %p') if att.check_out else None,
+            "work_hours": att.work_hours,
+        })
+        
+    personal_attendance = db.query(Attendance).filter(
+        Attendance.employee_id == current_employee.id
+    ).order_by(Attendance.date.desc()).limit(10).all()
+
+    # 4. Dialect-independent python grouping for 3 months (90 days) historical attendance data
+    three_months_ago = today - timedelta(days=90)
+    history_records = db.query(Attendance.date, Attendance.status, Attendance.employee_id)\
+        .filter(Attendance.date >= three_months_ago).all()
+        
+    unique_emps = set()
+    monthly_counts = {}
+    for r_date, r_status, r_emp_id in history_records:
+        if r_date:
+            unique_emps.add(r_emp_id)
+            year_month = (r_date.year, r_date.month)
+            status_str = r_status.value if hasattr(r_status, "value") else str(r_status)
+            key = (year_month, status_str)
+            monthly_counts[key] = monthly_counts.get(key, 0) + 1
+            
+    historical_summary = [
+        {
+            "year": k[0][0],
+            "month": k[0][1],
+            "status": k[1],
+            "count": v
+        }
+        for k, v in monthly_counts.items()
+    ]
+    unique_emp_count = len(unique_emps)
+
+    # 5. Build employee_list securely and dynamically based on caller role
+    employee_list = []
+    user_role = current_user.role.value if hasattr(current_user.role, "value") else str(current_user.role)
+    
+    for e in employees:
+        is_self = (e.id == current_employee.id)
+        is_direct_report = (e.reporting_manager_id == current_employee.id)
+        has_sensitive_access = (
+            user_role in ["admin", "hr"] or
+            (user_role == "manager" and (is_self or is_direct_report)) or
+            is_self
+        )
+        
+        emp_data = {
+            "employee_code": e.employee_id,
+            "name": e.full_name,
+            "email": e.email,
+            "phone": e.phone if is_self or user_role in ["admin", "hr", "manager"] else "N/A",
+            "gender": e.gender if is_self or user_role in ["admin", "hr", "manager"] else "N/A",
+            "designation": e.designation,
+            "department": dept_map.get(e.department_id, "N/A"),
+            "reporting_manager": mgr_map.get(e.reporting_manager_id, "None"),
+            "joining_date": str(e.joining_date) if e.joining_date else "N/A",
+            "status": e.employment_status.value if hasattr(e.employment_status, "value") else str(e.employment_status),
+            "employment_type": e.employment_type.value if hasattr(e.employment_type, "value") else str(e.employment_type),
+            "is_active": e.is_active,
+        }
+        
+        if has_sensitive_access:
+            emp_data.update({
+                "casual_leave_balance": e.casual_leave_balance,
+                "sick_leave_balance": e.sick_leave_balance,
+                "earned_leave_balance": e.earned_leave_balance,
+            })
+        employee_list.append(emp_data)
 
     context = {
-        "total_employees": len(employees),
-        "active_employees": active_count,
+        "current_user": {
+            "name": current_user.full_name,
+            "email": current_user.email,
+            "role": user_role,
+            "employee_id": current_employee.employee_id,
+            "designation": current_employee.designation,
+            "casual_leave_balance": current_employee.casual_leave_balance,
+            "sick_leave_balance": current_employee.sick_leave_balance,
+            "earned_leave_balance": current_employee.earned_leave_balance,
+            "status": current_employee.employment_status.value if hasattr(current_employee.employment_status, "value") else str(current_employee.employment_status),
+        },
+        "current_user_leave_requests": [
+            {
+                "id": l.id,
+                "type": l.leave_type.value if hasattr(l.leave_type, "value") else str(l.leave_type),
+                "days": l.days,
+                "start_date": str(l.start_date),
+                "end_date": str(l.end_date),
+                "status": l.status.value if hasattr(l.status, "value") else str(l.status),
+                "reason": l.reason,
+            }
+            for l in personal_leaves
+        ],
+        "current_user_recent_attendance": [
+            {
+                "date": str(att.date),
+                "status": att.status.value if hasattr(att.status, "value") else str(att.status),
+                "check_in": att.check_in.strftime('%Y-%m-%d %I:%M %p') if att.check_in else None,
+                "check_out": att.check_out.strftime('%Y-%m-%d %I:%M %p') if att.check_out else None,
+                "work_hours": att.work_hours,
+            }
+            for att in personal_attendance
+        ],
+        "today_checkins": today_checkins,
+        "total_employees_registered": len(employees),
+        "total_active_employees": active_count,
         "employees_on_notice": [{"name": e.full_name, "designation": e.designation} for e in on_notice],
         "pending_leave_requests": len(pending_leaves),
         "pending_leaves_detail": [
             {
-                "employee": db.query(Employee).filter(Employee.id == l.employee_id).first().full_name
-                if db.query(Employee).filter(Employee.id == l.employee_id).first() else "Unknown",
-                "type": l.leave_type.value,
+                "employee": mgr_map.get(l.employee_id, "Unknown"),
+                "type": l.leave_type.value if hasattr(l.leave_type, "value") else str(l.leave_type),
                 "days": l.days,
                 "from": str(l.start_date),
             }
             for l in pending_leaves[:10]
         ],
-        "employee_list": [
-            {
-                "name": e.full_name,
-                "designation": e.designation,
-                "department": e.department_id,
-                "ctc": e.ctc,
-                "casual_leave_balance": e.casual_leave_balance,
-                "sick_leave_balance": e.sick_leave_balance,
-                "earned_leave_balance": e.earned_leave_balance,
-                "status": e.employment_status.value,
-            }
-            for e in employees[:20]
-        ],
+        "employee_list": employee_list,
+        "historical_attendance_summary_3_months": historical_summary,
+        "total_unique_employees_checked_in_last_90_days": unique_emp_count,
         "retrieved_corporate_documents_context": rag_context
     }
 

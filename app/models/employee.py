@@ -48,6 +48,8 @@ class Employee(Base):
     date_of_birth = Column(Date, nullable=True)
     gender = Column(String, nullable=True)
     address = Column(Text, nullable=True)
+    official_address = Column(Text, nullable=True)
+    corresponding_address = Column(Text, nullable=True)
     
     # Professional
     department_id = Column(Integer, nullable=True, index=True)
@@ -69,6 +71,7 @@ class Employee(Base):
     casual_leave_balance = Column(Float, default=12)
     sick_leave_balance = Column(Float, default=12)
     earned_leave_balance = Column(Float, default=15)
+    comp_off_balance = Column(Float, default=0)
     
     # Documents
     pan_number = Column(String, nullable=True)

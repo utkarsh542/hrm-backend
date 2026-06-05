@@ -63,9 +63,15 @@ def run_payroll(
     if existing:
         raise HTTPException(status_code=400, detail=f"Payroll already processed for {request.month}/{request.year}")
 
-    employees = db.query(Employee).filter(Employee.employment_status == EmploymentStatus.ACTIVE).all()
+    employees = db.query(Employee).filter(
+        Employee.employment_status.in_([
+            EmploymentStatus.ACTIVE,
+            EmploymentStatus.ON_NOTICE,
+            EmploymentStatus.ON_LEAVE
+        ])
+    ).all()
     if not employees:
-        raise HTTPException(status_code=400, detail="No active employees found")
+        raise HTTPException(status_code=400, detail="No active or eligible employees found")
 
     payroll_run = PayrollRun(
         month=request.month,

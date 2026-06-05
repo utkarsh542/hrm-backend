@@ -57,8 +57,8 @@ class Resignation(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-class Document(Base):
-    __tablename__ = "documents"
+class OffboardingDocument(Base):
+    __tablename__ = "offboarding_documents"
 
     id = Column(Integer, primary_key=True, index=True)
     employee_id = Column(Integer, nullable=True)

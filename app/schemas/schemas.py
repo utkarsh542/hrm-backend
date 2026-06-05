@@ -203,11 +203,14 @@ class EmployeeCreate(BaseModel):
     date_of_birth: Optional[dt.date] = None
     gender: Optional[str] = None
     address: Optional[str] = None
+    official_address: Optional[str] = None
+    corresponding_address: Optional[str] = None
     department_id: Optional[int] = None
     designation: Optional[str] = None
     employment_type: str = "full_time"
     joining_date: dt.date = dt.date.today()
     ctc: float = 0
+    comp_off_balance: float = 0.0
     pan_number: Optional[str] = None
     aadhar_number: Optional[str] = None
     bank_account: Optional[str] = None
@@ -218,11 +221,14 @@ class EmployeeUpdate(BaseModel):
     full_name: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
+    official_address: Optional[str] = None
+    corresponding_address: Optional[str] = None
     department_id: Optional[int] = None
     designation: Optional[str] = None
     employment_type: Optional[str] = None
     employment_status: Optional[str] = None
     ctc: Optional[float] = None
+    comp_off_balance: Optional[float] = None
     reporting_manager_id: Optional[int] = None
 
 class EmployeeResponse(BaseModel):
@@ -233,6 +239,9 @@ class EmployeeResponse(BaseModel):
     phone: Optional[str]
     date_of_birth: Optional[dt.date]
     gender: Optional[str]
+    address: Optional[str] = None
+    official_address: Optional[str] = None
+    corresponding_address: Optional[str] = None
     department_id: Optional[int]
     department_name: str = ""
     designation: Optional[str]
@@ -243,6 +252,7 @@ class EmployeeResponse(BaseModel):
     casual_leave_balance: float
     sick_leave_balance: float
     earned_leave_balance: float
+    comp_off_balance: float = 0.0
     onboarding_status: str
     reporting_manager_id: Optional[int] = None
     avatar_url: Optional[str]
@@ -303,6 +313,10 @@ class LeaveRequestCreate(BaseModel):
 class LeaveRequestUpdate(BaseModel):
     status: Optional[str] = None
     rejection_reason: Optional[str] = None
+    start_date: Optional[dt.date] = None
+    end_date: Optional[dt.date] = None
+    reason: Optional[str] = None
+    leave_type: Optional[str] = None
 
 class LeaveRequestResponse(BaseModel):
     id: int
@@ -484,6 +498,12 @@ class DashboardStats(BaseModel):
     this_month_payroll: float = 0
     new_hires_this_month: int = 0
     attrition_rate: float = 0
+    casual_leave_balance: float = 0
+    sick_leave_balance: float = 0
+    earned_leave_balance: float = 0
+    work_hours_this_month: float = 0
+    present_days_this_month: int = 0
+    active_goals_count: int = 0
 
 class DepartmentStats(BaseModel):
     name: str
@@ -498,3 +518,46 @@ class RecentActivity(BaseModel):
     type: str
     message: str
     timestamp: dt.datetime
+
+
+# ============== COMP-OFF ==============
+class CompOffRuleResponse(BaseModel):
+    id: int
+    standard_working_hours: float
+    min_overtime_hours: float
+    is_active: int
+    
+    class Config:
+        from_attributes = True
+
+class CompOffRuleUpdate(BaseModel):
+    standard_working_hours: Optional[float] = None
+    min_overtime_hours: Optional[float] = None
+
+class CompOffRequestCreate(BaseModel):
+    attendance_date: dt.date
+    reason: Optional[str] = None
+
+class CompOffRequestResponse(BaseModel):
+    id: int
+    employee_id: int
+    attendance_date: dt.date
+    working_hours: float
+    overtime_hours: float
+    reason: Optional[str]
+    manager_status: str
+    manager_id: Optional[int]
+    manager_action_at: Optional[dt.datetime]
+    hr_status: str
+    hr_id: Optional[int]
+    hr_action_at: Optional[dt.datetime]
+    status: str
+    created_at: dt.datetime
+    employee_name: str = ""
+    
+    class Config:
+        from_attributes = True
+
+class CompOffRequestAction(BaseModel):
+    action: str  # approve, reject
+
