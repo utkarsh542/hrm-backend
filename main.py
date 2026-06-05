@@ -275,13 +275,15 @@ def seed_demo_data():
             if cand_idx <= len(candidate_list) and job_idx <= len(job_list):
                 cand = candidate_list[cand_idx - 1]
                 job = job_list[job_idx - 1]
-                screening = screen_resume(cand.skills or "", job.skills or "", cand.experience_years)
+                # Use simulated screening values to avoid blocking API requests on server startup/seeding
+                ai_score = random.randint(55, 95)
                 app = Application(
-                    candidate_id=cand.id, job_id=job.id,
+                    candidate_id=cand.id,
+                    job_id=job.id,
                     status=ApplicationStatus(status),
                     source=random.choice(list(ApplicationSource)),
-                    ai_score=screening["score"],
-                    ai_summary=screening["summary"],
+                    ai_score=ai_score,
+                    ai_summary=f"Simulated screening complete. Candidate has matching skills: {cand.skills}.",
                     applied_at=datetime.utcnow() - timedelta(days=random.randint(1, 30)),
                 )
                 applications.append(app)
