@@ -146,8 +146,7 @@ def create_employee(request: EmployeeCreate, db: Session = Depends(get_db)):
                 type="success"
             )
     except Exception as e:
-        import logging
-        logger = logging.getLogger("uvicorn")
+        from app.logger import logger
         logger.error(f"Error in welcome notification triggers: {e}")
     
     dept = db.query(Department).filter(Department.id == employee.department_id).first()

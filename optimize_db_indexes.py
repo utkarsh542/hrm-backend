@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from app.logger import logger
 """Database Index Optimizer for HRMS SQLite Database."""
 import sqlite3
 import os
@@ -5,7 +9,7 @@ import os
 db_path = r"c:\Users\Utkarsh Gupta\Downloads\hrm\backend\hrms.db"
 
 if not os.path.exists(db_path):
-    print(f"Error: Database not found at {db_path}")
+    logger.error(f"Error: Database not found at {db_path}")
     exit(1)
 
 conn = sqlite3.connect(db_path)
@@ -56,18 +60,18 @@ indexes = [
     "CREATE INDEX IF NOT EXISTS ix_documents_candidate_id ON documents(candidate_id);"
 ]
 
-print(f"Applying {len(indexes)} index optimization commands to {db_path}...")
+logger.info(f"Applying {len(indexes)} index optimization commands to {db_path}...")
 
 try:
     for idx_sql in indexes:
         # Extract index name for log transparency
         idx_name = idx_sql.split("IF NOT EXISTS ")[1].split(" ON")[0]
         cursor.execute(idx_sql)
-        print(f"  [OK] Index ensured: {idx_name}")
+        logger.info(f"  [OK] Index ensured: {idx_name}")
     conn.commit()
-    print("Database index optimizations applied successfully!")
+    logger.info("Database index optimizations applied successfully!")
 except Exception as e:
     conn.rollback()
-    print(f"Error executing database migrations: {e}")
+    logger.error(f"Error executing database migrations: {e}")
 finally:
     conn.close()

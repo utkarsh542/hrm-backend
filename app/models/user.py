@@ -1,6 +1,7 @@
 """User model for authentication and role management."""
 import enum
 from datetime import datetime
+from app.utils.timezone import get_ist_time
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum as SAEnum
 from app.database import Base
 
@@ -28,8 +29,8 @@ class User(Base):
     _role = Column("role", SAEnum(UserRole), default=UserRole.EMPLOYEE, nullable=False)
     is_active = Column(Boolean, default=True)
     avatar_url = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)
+    updated_at = Column(DateTime, default=get_ist_time, onupdate=get_ist_time)
 
     @hybrid_property
     def role(self):

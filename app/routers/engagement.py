@@ -1,4 +1,5 @@
 """Employee engagement router — surveys, mood tracking, burnout detection."""
+from app.utils.timezone import get_ist_date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime, date, timedelta
@@ -95,7 +96,7 @@ def get_survey_results(survey_id: int, db: Session = Depends(get_db)):
 
 @router.post("/mood")
 def submit_mood(data: MoodCreate, db: Session = Depends(get_db)):
-    existing = db.query(MoodEntry).filter(MoodEntry.employee_id == data.employee_id, MoodEntry.date == date.today()).first()
+    existing = db.query(MoodEntry).filter(MoodEntry.employee_id == data.employee_id, MoodEntry.date == get_ist_date()).first()
     if existing:
         existing.mood = max(1, min(5, data.mood))
         existing.note = data.note
@@ -108,7 +109,7 @@ def submit_mood(data: MoodCreate, db: Session = Depends(get_db)):
 
 @router.get("/mood/trends")
 def get_mood_trends(employee_id: int = None, days: int = 30, db: Session = Depends(get_db)):
-    since = date.today() - timedelta(days=days)
+    since = get_ist_date() - timedelta(days=days)
     query = db.query(MoodEntry).filter(MoodEntry.date >= since)
     if employee_id:
         query = query.filter(MoodEntry.employee_id == employee_id)
@@ -127,7 +128,7 @@ def get_burnout_risk(db: Session = Depends(get_db)):
     from app.models.attendance import Attendance, LeaveRequest
     employees = db.query(Employee).filter(Employee.is_active == True).all()
     risks = []
-    month_start = date.today().replace(day=1)
+    month_start = get_ist_date().replace(day=1)
     for emp in employees:
         attendance = db.query(Attendance).filter(Attendance.employee_id == emp.id, Attendance.date >= month_start).all()
         overtime = sum(a.overtime_hours or 0 for a in attendance)
@@ -146,6 +147,6 @@ def engagement_dashboard(db: Session = Depends(get_db)):
     total_surveys = db.query(PulseSurvey).count()
     active_surveys = db.query(PulseSurvey).filter(PulseSurvey.status == SurveyStatus.active).count()
     total_responses = db.query(SurveyResponse).count()
-    today_moods = db.query(MoodEntry).filter(MoodEntry.date == date.today()).all()
+    today_moods = db.query(MoodEntry).filter(MoodEntry.date == get_ist_date()).all()
     avg_mood = round(sum(m.mood for m in today_moods) / len(today_moods), 1) if today_moods else 0
     return {"total_surveys": total_surveys, "active_surveys": active_surveys, "total_responses": total_responses, "today_mood_avg": avg_mood, "today_mood_count": len(today_moods)}

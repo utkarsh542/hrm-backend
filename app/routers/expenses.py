@@ -1,5 +1,6 @@
 """Expense Management router."""
 import os
+from app.utils.timezone import get_ist_time
 from datetime import datetime, date
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
@@ -139,7 +140,7 @@ async def upload_receipt(
     content = await file.read()
     if len(content) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Receipt too large. Max 5MB.")
-    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    ts = get_ist_time().strftime("%Y%m%d_%H%M%S")
     path = os.path.join(RECEIPTS_DIR, f"{ts}_{file.filename.replace(' ', '_')}")
     with open(path, "wb") as f:
         f.write(content)
@@ -162,13 +163,13 @@ def action_expense(
     if req.action == "approve":
         exp.status = ExpenseStatus.APPROVED
         exp.approved_by = req.approved_by
-        exp.approved_at = datetime.utcnow()
+        exp.approved_at = get_ist_time()
     elif req.action == "reject":
         exp.status = ExpenseStatus.REJECTED
         exp.rejection_reason = req.rejection_reason
     elif req.action == "pay":
         exp.status = ExpenseStatus.PAID
-        exp.paid_at = datetime.utcnow()
+        exp.paid_at = get_ist_time()
     else:
         raise HTTPException(status_code=400, detail="Invalid action")
     db.commit()

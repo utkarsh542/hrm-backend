@@ -195,6 +195,9 @@ class InterviewResponse(BaseModel):
         from_attributes = True
 
 
+from app.utils.timezone import get_ist_date
+
+
 # ============== EMPLOYEES ==============
 class EmployeeCreate(BaseModel):
     full_name: str
@@ -208,7 +211,7 @@ class EmployeeCreate(BaseModel):
     department_id: Optional[int] = None
     designation: Optional[str] = None
     employment_type: str = "full_time"
-    joining_date: dt.date = dt.date.today()
+    joining_date: dt.date = get_ist_date()
     ctc: float = 0
     comp_off_balance: float = 0.0
     pan_number: Optional[str] = None
@@ -266,7 +269,7 @@ class EmployeeResponse(BaseModel):
 # ============== ATTENDANCE ==============
 class AttendanceCreate(BaseModel):
     employee_id: int
-    attendance_date: dt.date = dt.date.today()
+    attendance_date: dt.date = get_ist_date()
     status: str = "present"
     notes: Optional[str] = None
 

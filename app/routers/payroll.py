@@ -1,5 +1,6 @@
 """Payroll router — run payroll, generate payslips, download PDFs."""
 import os
+from app.utils.timezone import get_ist_time
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -135,7 +136,7 @@ def run_payroll(
     payroll_run.total_deductions = round(total_deductions, 2)
     payroll_run.total_net = round(total_net, 2)
     payroll_run.status = PayrollStatus.COMPLETED
-    payroll_run.processed_at = datetime.utcnow()
+    payroll_run.processed_at = get_ist_time()
 
     db.commit()
     db.refresh(payroll_run)

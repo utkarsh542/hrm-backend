@@ -1,4 +1,5 @@
 """Notification model for real-time alerts."""
+from app.utils.timezone import get_ist_time
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Enum as SQLEnum
 from datetime import datetime
 from app.database import Base
@@ -21,4 +22,4 @@ class Notification(Base):
     type = Column(SQLEnum(NotificationType), default=NotificationType.info)
     link = Column(String, nullable=True)
     is_read = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)

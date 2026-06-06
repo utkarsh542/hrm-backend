@@ -3,6 +3,7 @@ import enum
 from datetime import datetime, date
 from sqlalchemy import Column, Integer, String, Text, DateTime, Date, Enum as SAEnum, Float
 from app.database import Base
+from app.utils.timezone import get_ist_time, get_ist_date
 
 
 class AttendanceStatus(str, enum.Enum):
@@ -37,7 +38,7 @@ class Attendance(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     employee_id = Column(Integer, nullable=False, index=True)
-    date = Column(Date, nullable=False, default=date.today, index=True)
+    date = Column(Date, nullable=False, default=get_ist_date, index=True)
     status = Column(SAEnum(AttendanceStatus), default=AttendanceStatus.PRESENT)
     check_in = Column(DateTime, nullable=True)
     check_out = Column(DateTime, nullable=True)
@@ -58,7 +59,7 @@ class Attendance(Base):
     check_out_district = Column(String, nullable=True)
     check_out_state = Column(String, nullable=True)
     
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)
 
 
 class LeaveRequest(Base):
@@ -75,8 +76,8 @@ class LeaveRequest(Base):
     approved_by = Column(Integer, nullable=True)
     approved_at = Column(DateTime, nullable=True)
     rejection_reason = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)
+    updated_at = Column(DateTime, default=get_ist_time, onupdate=get_ist_time)
 
 
 class Holiday(Base):
@@ -86,7 +87,7 @@ class Holiday(Base):
     name = Column(String, nullable=False)
     date = Column(Date, nullable=False)
     type = Column(String, default="national")  # national, regional, optional
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)
 
 
 class GeofenceSetting(Base):
@@ -105,7 +106,7 @@ class CompOffRule(Base):
     standard_working_hours = Column(Float, default=8.0)
     min_overtime_hours = Column(Float, default=2.0)
     is_active = Column(Integer, default=1)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)
 
 
 class CompOffRequest(Base):
@@ -124,5 +125,5 @@ class CompOffRequest(Base):
     hr_id = Column(Integer, nullable=True)
     hr_action_at = Column(DateTime, nullable=True)
     status = Column(String, default="pending")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)
 

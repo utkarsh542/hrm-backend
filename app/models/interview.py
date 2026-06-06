@@ -1,6 +1,7 @@
 """Interview and scorecard models."""
 import enum
 from datetime import datetime
+from app.utils.timezone import get_ist_time
 from sqlalchemy import Column, Integer, String, Text, DateTime, Enum as SAEnum, Float
 from app.database import Base
 
@@ -52,5 +53,5 @@ class Interview(Base):
     recommendation = Column(String, nullable=True)  # hire, reject, next_round
     feedback = Column(Text, nullable=True)
     round_number = Column(Integer, default=1, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)
+    updated_at = Column(DateTime, default=get_ist_time, onupdate=get_ist_time)

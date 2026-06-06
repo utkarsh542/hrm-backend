@@ -1,4 +1,5 @@
 """Approval workflows router."""
+from app.utils.timezone import get_ist_time
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -52,7 +53,7 @@ def approve_request(request_id: int, data: ApprovalActionRequest, db: Session = 
         raise HTTPException(status_code=404, detail="Approval request not found")
     req.status = ApprovalStatus.approved if data.action == "approve" else ApprovalStatus.rejected
     req.comments = data.comments
-    req.acted_at = datetime.utcnow()
+    req.acted_at = get_ist_time()
     db.commit()
     
     # ─── Entity Syncing ───
@@ -67,7 +68,7 @@ def approve_request(request_id: int, data: ApprovalActionRequest, db: Session = 
             
             if status_str == "approved":
                 leave.status = LeaveStatus.APPROVED
-                leave.approved_at = datetime.utcnow()
+                leave.approved_at = get_ist_time()
                 
                 # Deduct leave balance
                 emp = db.query(Employee).filter(Employee.id == leave.employee_id).first()
@@ -110,8 +111,7 @@ def approve_request(request_id: int, data: ApprovalActionRequest, db: Session = 
                         comments=remarks
                     )
             except Exception as e:
-                import logging
-                logger = logging.getLogger("uvicorn")
+                from app.logger import logger
                 logger.error(f"Error in leave approval sync alerts: {e}")
                 
     elif req.entity_type == "resignation":

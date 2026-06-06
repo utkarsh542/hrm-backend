@@ -1,6 +1,7 @@
 """Expense management model."""
 import enum
 from datetime import datetime, date
+from app.utils.timezone import get_ist_time, get_ist_date
 from sqlalchemy import Column, Integer, String, Text, DateTime, Date, Enum as SAEnum, Float, Boolean
 from app.database import Base
 
@@ -36,7 +37,7 @@ class Expense(Base):
     category      = Column(SAEnum(ExpenseCategory), default=ExpenseCategory.OTHER)
     amount        = Column(Float, nullable=False)
     currency      = Column(String, default="INR")
-    expense_date  = Column(Date, nullable=False, default=date.today)
+    expense_date  = Column(Date, nullable=False, default=get_ist_date)
     status        = Column(SAEnum(ExpenseStatus), default=ExpenseStatus.SUBMITTED, index=True)
     receipt_path  = Column(String, nullable=True)
     receipt_name  = Column(String, nullable=True)
@@ -45,5 +46,5 @@ class Expense(Base):
     rejection_reason = Column(Text, nullable=True)
     paid_at       = Column(DateTime, nullable=True)
     notes         = Column(Text, nullable=True)
-    created_at    = Column(DateTime, default=datetime.utcnow)
-    updated_at    = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at    = Column(DateTime, default=get_ist_time)
+    updated_at    = Column(DateTime, default=get_ist_time, onupdate=get_ist_time)

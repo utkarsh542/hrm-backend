@@ -1,4 +1,5 @@
 """Advanced analytics and AI insights."""
+from app.utils.timezone import get_ist_date
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from datetime import date
@@ -30,7 +31,7 @@ def get_workforce_analytics(db: Session = Depends(get_db)):
     tenure_buckets = {"<1 year": 0, "1-2 years": 0, "2-5 years": 0, "5+ years": 0}
     for emp in db.query(Employee).filter(Employee.is_active == True).all():
         if emp.joining_date:
-            years = (date.today() - emp.joining_date).days / 365
+            years = (get_ist_date() - emp.joining_date).days / 365
             if years < 1: tenure_buckets["<1 year"] += 1
             elif years < 2: tenure_buckets["1-2 years"] += 1
             elif years < 5: tenure_buckets["2-5 years"] += 1
@@ -38,9 +39,9 @@ def get_workforce_analytics(db: Session = Depends(get_db)):
 
     employees = db.query(Employee).filter(Employee.is_active == True, Employee.ctc > 0).all()
     avg_ctc = sum(e.ctc for e in employees) / len(employees) if employees else 0
-    month_start = date.today().replace(day=1)
+    month_start = get_ist_date().replace(day=1)
     new_hires = db.query(Employee).filter(Employee.joining_date >= month_start).count()
-    quarter_start = date.today().replace(month=((date.today().month - 1) // 3) * 3 + 1, day=1)
+    quarter_start = get_ist_date().replace(month=((get_ist_date().month - 1) // 3) * 3 + 1, day=1)
     resignations = db.query(Resignation).filter(Resignation.resignation_date >= quarter_start).count()
     attrition_rate = round((resignations / max(active, 1)) * 100, 1)
 

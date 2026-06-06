@@ -1,4 +1,5 @@
 """AI Copilot router — chat, JD generator, attrition risk, review writer."""
+from app.utils.timezone import get_ist_date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -82,7 +83,7 @@ def copilot_chat(
     
     # 3. Retrieve today's attendance logs and personal attendance history
     from datetime import date, timedelta
-    today = date.today()
+    today = get_ist_date()
     today_attendance = db.query(Attendance).filter(Attendance.date == today).all()
     today_checkins = []
     for att in today_attendance:
@@ -296,7 +297,7 @@ def get_attrition_risk(db: Session = Depends(get_db)):
             "full_name": emp.full_name,
             "designation": emp.designation,
             "department": dept_map.get(emp.department_id, "—"),
-            "tenure_months": ((__import__('datetime').date.today() - emp.joining_date).days // 30) if emp.joining_date else 0,
+            "tenure_months": ((__import__('datetime').get_ist_date() - emp.joining_date).days // 30) if emp.joining_date else 0,
             **risk,
         })
 
@@ -329,8 +330,7 @@ Employees list:
                     if emp_key in bulk_result:
                         e["recommendation"] = bulk_result[emp_key]
         except Exception as ex:
-            import logging
-            logger = logging.getLogger("uvicorn")
+            from app.logger import logger
             logger.error(f"Error in bulk attrition AI recommendation: {ex}")
 
     # Fill in defaults if any recommendation is missing

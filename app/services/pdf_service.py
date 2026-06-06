@@ -1,5 +1,6 @@
 """PDF generation service for payslips, offer letters, experience letters etc."""
 import os
+from app.utils.timezone import get_ist_time, get_ist_date
 from datetime import date, datetime
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -120,7 +121,7 @@ def generate_experience_letter_pdf(employee_data: dict, output_path: str) -> str
     elements.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#6c63ff')))
     elements.append(Spacer(1, 20))
     
-    elements.append(Paragraph(f"Date: {date.today().strftime('%B %d, %Y')}", body_style))
+    elements.append(Paragraph(f"Date: {get_ist_date().strftime('%B %d, %Y')}", body_style))
     elements.append(Spacer(1, 10))
     elements.append(Paragraph("<b>EXPERIENCE CERTIFICATE</b>", ParagraphStyle('H', fontSize=14, alignment=TA_CENTER, spaceBefore=10, spaceAfter=20)))
     
@@ -132,7 +133,7 @@ def generate_experience_letter_pdf(employee_data: dict, output_path: str) -> str
     designation = employee_data.get("designation", "N/A")
     department = employee_data.get("department", "N/A")
     joining = employee_data.get("joining_date", "N/A")
-    lwd = employee_data.get("last_working_day", date.today().strftime("%Y-%m-%d"))
+    lwd = employee_data.get("last_working_day", get_ist_date().strftime("%Y-%m-%d"))
     
     body = f"""This is to certify that <b>{name}</b> (Employee ID: {emp_id}) was employed with 
     {settings.COMPANY_NAME} from <b>{joining}</b> to <b>{lwd}</b> in the capacity of 
@@ -175,14 +176,14 @@ def generate_relieving_letter_pdf(employee_data: dict, output_path: str) -> str:
     elements.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#6c63ff')))
     elements.append(Spacer(1, 20))
     
-    elements.append(Paragraph(f"Date: {date.today().strftime('%B %d, %Y')}", body_style))
+    elements.append(Paragraph(f"Date: {get_ist_date().strftime('%B %d, %Y')}", body_style))
     elements.append(Spacer(1, 10))
     elements.append(Paragraph("<b>RELIEVING LETTER</b>", ParagraphStyle('H', fontSize=14, alignment=TA_CENTER, spaceBefore=10, spaceAfter=20)))
     
     name = employee_data.get("full_name", "Employee")
     emp_id = employee_data.get("employee_id", "N/A")
     designation = employee_data.get("designation", "N/A")
-    lwd = employee_data.get("last_working_day", date.today().strftime("%Y-%m-%d"))
+    lwd = employee_data.get("last_working_day", get_ist_date().strftime("%Y-%m-%d"))
     
     elements.append(Paragraph(f"Dear <b>{name}</b>,", body_style))
     elements.append(Spacer(1, 10))
@@ -297,7 +298,7 @@ def generate_offer_letter_pdf(candidate_name: str, job_title: str, ctc: float, j
     story.append(Spacer(1, 20))
     
     # Date
-    today_str = datetime.today().strftime("%d %B %Y")
+    today_str = get_ist_time().strftime("%d %B %Y")
     story.append(Paragraph(f"Date: {today_str}", body_style))
     story.append(Spacer(1, 10))
     

@@ -1,4 +1,5 @@
 """Skills, training, and succession planning router."""
+from app.utils.timezone import get_ist_date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import date
@@ -221,7 +222,7 @@ def assess_candidate(plan_id: int, employee_id: int, db: Session = Depends(get_d
     from app.models.performance import PerformanceReview
     review = db.query(PerformanceReview).filter(PerformanceReview.employee_id == employee_id).order_by(PerformanceReview.created_at.desc()).first()
     rating = review.overall_rating if review and review.overall_rating else 3.5
-    tenure_years = (date.today() - emp.joining_date).days / 365 if emp.joining_date else 1.0
+    tenure_years = (get_ist_date() - emp.joining_date).days / 365 if emp.joining_date else 1.0
     assessment = assess_succession_readiness(emp.full_name, emp.designation or "", plan.position, rating, tenure_years, skill_names)
     existing = db.query(SuccessionCandidate).filter(SuccessionCandidate.plan_id == plan_id, SuccessionCandidate.employee_id == employee_id).first()
     if existing:

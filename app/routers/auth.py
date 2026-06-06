@@ -104,8 +104,7 @@ def change_password(
             type="warning"
         )
     except Exception as e:
-        import logging
-        logger = logging.getLogger("uvicorn")
+        from app.logger import logger
         logger.error(f"Error in password change alerts: {e}")
         
     return {"message": "Password updated successfully"}
@@ -149,8 +148,7 @@ def reset_password_admin(
             type="info"
         )
     except Exception as e:
-        import logging
-        logger = logging.getLogger("uvicorn")
+        from app.logger import logger
         logger.error(f"Error in password reset alerts: {e}")
         
     return {"message": f"Password reset to Welcome@123 successfully for {user.full_name}"}

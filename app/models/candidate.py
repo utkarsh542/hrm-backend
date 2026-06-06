@@ -1,6 +1,7 @@
 """Candidate and application models."""
 import enum
 from datetime import datetime
+from app.utils.timezone import get_ist_time
 from sqlalchemy import Column, Integer, String, Text, DateTime, Enum as SAEnum, Float
 from app.database import Base
 
@@ -43,8 +44,8 @@ class Candidate(Base):
     location = Column(String, nullable=True)
     expected_salary = Column(Float, nullable=True)
     notice_period_days = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)
+    updated_at = Column(DateTime, default=get_ist_time, onupdate=get_ist_time)
 
 
 class Application(Base):
@@ -58,5 +59,5 @@ class Application(Base):
     ai_score = Column(Float, nullable=True)  # AI screening score (0-100)
     ai_summary = Column(Text, nullable=True)  # AI screening summary
     notes = Column(Text, nullable=True)
-    applied_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    applied_at = Column(DateTime, default=get_ist_time)
+    updated_at = Column(DateTime, default=get_ist_time, onupdate=get_ist_time)

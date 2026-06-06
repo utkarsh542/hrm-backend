@@ -1,4 +1,5 @@
 """Skills, training, and succession planning models."""
+from app.utils.timezone import get_ist_time
 from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, JSON, Enum as SQLEnum
 from datetime import datetime
 from app.database import Base
@@ -19,7 +20,7 @@ class Skill(Base):
     name = Column(String, nullable=False, unique=True)
     category = Column(SQLEnum(SkillCategory), default=SkillCategory.technical)
     description = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)
 
 
 class EmployeeSkill(Base):
@@ -30,7 +31,7 @@ class EmployeeSkill(Base):
     proficiency = Column(Integer, default=3)
     verified = Column(Boolean, default=False)
     verified_by = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)
 
 
 class TrainingProgram(Base):
@@ -43,7 +44,7 @@ class TrainingProgram(Base):
     duration_hours = Column(Integer, default=0)
     is_mandatory = Column(Boolean, default=False)
     skills_covered = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)
 
 
 class TrainingEnrollment(Base):
@@ -53,7 +54,7 @@ class TrainingEnrollment(Base):
     employee_id = Column(Integer, nullable=False, index=True)
     status = Column(String, default="enrolled")
     progress = Column(Integer, default=0)
-    enrolled_at = Column(DateTime, default=datetime.utcnow)
+    enrolled_at = Column(DateTime, default=get_ist_time)
     completed_at = Column(DateTime, nullable=True)
     certificate_url = Column(String, nullable=True)
 
@@ -65,7 +66,7 @@ class SuccessionPlan(Base):
     department = Column(String, nullable=True)
     current_holder_id = Column(Integer, nullable=True)
     criticality = Column(String, default="medium")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)
 
 
 class SuccessionCandidate(Base):
@@ -77,4 +78,4 @@ class SuccessionCandidate(Base):
     ai_score = Column(Float, nullable=True)
     gaps = Column(JSON, nullable=True)
     development_actions = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)

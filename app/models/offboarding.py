@@ -1,6 +1,7 @@
 """Offboarding, resignation, and exit models."""
 import enum
 from datetime import datetime, date
+from app.utils.timezone import get_ist_time, get_ist_date
 from sqlalchemy import Column, Integer, String, Text, DateTime, Date, Enum as SAEnum, Float, Boolean
 from app.database import Base
 
@@ -21,7 +22,7 @@ class Resignation(Base):
     id = Column(Integer, primary_key=True, index=True)
     employee_id = Column(Integer, nullable=False)
     reason = Column(Text, nullable=True)
-    resignation_date = Column(Date, nullable=False, default=date.today)
+    resignation_date = Column(Date, nullable=False, default=get_ist_date)
     last_working_day = Column(Date, nullable=True)
     notice_period_days = Column(Integer, default=30)
     status = Column(SAEnum(ResignationStatus), default=ResignationStatus.SUBMITTED)
@@ -53,8 +54,8 @@ class Resignation(Base):
     deductions = Column(Float, default=0)
     total_settlement = Column(Float, default=0)
     
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)
+    updated_at = Column(DateTime, default=get_ist_time, onupdate=get_ist_time)
 
 
 class OffboardingDocument(Base):
@@ -67,4 +68,4 @@ class OffboardingDocument(Base):
     type = Column(String, nullable=False)  # resume, offer_letter, payslip, experience_letter, etc.
     file_url = Column(String, nullable=True)
     generated_content = Column(Text, nullable=True)  # For generated docs
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)

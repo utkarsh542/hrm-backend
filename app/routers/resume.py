@@ -1,3 +1,4 @@
+from app.logger import logger
 """Resume parsing and smart candidate creation."""
 import os
 import time
@@ -24,7 +25,7 @@ def extract_text_from_file(file_path: str) -> str:
             doc.close()
             return text.strip()
         except Exception as e:
-            print(f"PDF extraction error: {e}")
+            logger.error(f"PDF extraction error: {e}")
             return ""
     elif ext == ".docx":
         try:
@@ -32,7 +33,7 @@ def extract_text_from_file(file_path: str) -> str:
             doc = Document(file_path)
             return "\n".join([p.text for p in doc.paragraphs]).strip()
         except Exception as e:
-            print(f"DOCX extraction error: {e}")
+            logger.error(f"DOCX extraction error: {e}")
             return ""
     elif ext == ".txt":
         with open(file_path, "r", encoding="utf-8", errors="ignore") as f:

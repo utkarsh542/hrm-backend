@@ -1,5 +1,6 @@
 """Authentication service — JWT token management and password hashing."""
-from datetime import datetime, timedelta
+from app.utils.timezone import get_ist_date
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -25,9 +26,10 @@ def hash_password(password: str) -> str:
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
+    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
 
 
 def decode_token(token: str) -> Optional[dict]:
@@ -105,7 +107,7 @@ def get_current_employee(
             employee_id=_get_next_employee_id(db),
             full_name=current_user.full_name,
             email=current_user.email,
-            joining_date=date.today(),
+            joining_date=get_ist_date(),
             ctc=500000,
             basic_salary=breakup["basic"],
             hra=breakup["hra"],

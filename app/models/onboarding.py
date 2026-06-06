@@ -1,4 +1,5 @@
 """Onboarding models for new employee onboarding automation."""
+from app.utils.timezone import get_ist_time
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Enum as SQLEnum
 from datetime import datetime
 from app.database import Base
@@ -30,7 +31,7 @@ class OnboardingPlan(Base):
     status = Column(String, default="active")
     ai_generated = Column(Boolean, default=False)
     created_by = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)
     completed_at = Column(DateTime, nullable=True)
 
 

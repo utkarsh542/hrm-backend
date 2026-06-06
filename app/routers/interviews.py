@@ -1,3 +1,5 @@
+from app.utils.timezone import get_ist_time
+from app.logger import logger
 """Interviews router — scheduling, AI interviews, scorecards."""
 import json
 from datetime import datetime
@@ -48,7 +50,7 @@ def schedule_interview(request: InterviewCreate, db: Session = Depends(get_db)):
     interview = Interview(**request.model_dump())
     
     # Generate meeting link
-    interview.meeting_link = f"https://meet.hrms.com/interview-{interview.id or 'new'}-{datetime.utcnow().strftime('%Y%m%d%H%M')}"
+    interview.meeting_link = f"https://meet.hrms.com/interview-{interview.id or 'new'}-{get_ist_time().strftime('%Y%m%d%H%M')}"
     
     db.add(interview)
     db.commit()
@@ -73,7 +75,7 @@ def schedule_interview(request: InterviewCreate, db: Session = Depends(get_db)):
                 meeting_link=interview.meeting_link
             )
         except Exception as e:
-            print("Failed to send candidate email:", e)
+            logger.error("Failed to send candidate email: %s", e)
             
     resp = InterviewResponse.model_validate(interview)
     resp.candidate_name = candidate.full_name if candidate else ""
@@ -128,7 +130,7 @@ def update_interview(interview_id: int, request: InterviewUpdate, db: Session = 
                     is_update=True
                 )
             except Exception as e:
-                print("Failed to send rescheduled email:", e)
+                logger.error("Failed to send rescheduled email: %s", e)
                 
     resp = InterviewResponse.model_validate(interview)
     resp.candidate_name = candidate.full_name if candidate else ""

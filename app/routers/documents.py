@@ -1,5 +1,6 @@
 """Document Management router — upload, list, download, delete."""
 import os
+from app.utils.timezone import get_ist_time
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
@@ -116,7 +117,7 @@ async def upload_document(
     if len(content) > settings.MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="File too large. Max 10MB.")
 
-    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    ts = get_ist_time().strftime("%Y%m%d_%H%M%S")
     safe = f"{ts}_{file.filename.replace(' ', '_')}"
     sub = f"emp_{employee_id}" if employee_id else "company"
     dest = os.path.join(DOCS_DIR, sub)

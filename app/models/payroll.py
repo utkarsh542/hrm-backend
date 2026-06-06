@@ -1,6 +1,7 @@
 """Payroll, salary, and payslip models."""
 import enum
 from datetime import datetime, date
+from app.utils.timezone import get_ist_time
 from sqlalchemy import Column, Integer, String, Text, DateTime, Date, Enum as SAEnum, Float
 from app.database import Base
 
@@ -26,7 +27,7 @@ class PayrollRun(Base):
     processed_by = Column(Integer, nullable=True)
     processed_at = Column(DateTime, nullable=True)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)
 
 
 class Payslip(Base):
@@ -64,4 +65,4 @@ class Payslip(Base):
     leave_days = Column(Integer, default=0)
     status = Column(String, default="generated")
     pdf_url = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)

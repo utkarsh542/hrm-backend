@@ -1,6 +1,7 @@
 """Face Attendance router — browser webcam based face check-in."""
 import base64
 import random
+from app.utils.timezone import get_ist_time, get_ist_date
 from datetime import datetime, date
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
@@ -68,7 +69,7 @@ def face_check_in(req: FaceCheckInRequest, db: Session = Depends(get_db)):
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
 
-    today = date.today()
+    today = get_ist_date()
     existing = db.query(FaceAttendance).filter(
         FaceAttendance.employee_id == req.employee_id,
         FaceAttendance.date == today,
@@ -80,7 +81,7 @@ def face_check_in(req: FaceCheckInRequest, db: Session = Depends(get_db)):
     if not result["verified"]:
         raise HTTPException(status_code=403, detail=f"Face verification failed: {result['reason']}")
 
-    now = datetime.utcnow()
+    now = get_ist_time()
     if existing:
         existing.check_in = now
         existing.confidence = result["confidence"]
@@ -124,7 +125,7 @@ def face_check_out(req: FaceCheckOutRequest, db: Session = Depends(get_db)):
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
 
-    today = date.today()
+    today = get_ist_date()
     rec = db.query(FaceAttendance).filter(
         FaceAttendance.employee_id == req.employee_id,
         FaceAttendance.date == today,
@@ -136,7 +137,7 @@ def face_check_out(req: FaceCheckOutRequest, db: Session = Depends(get_db)):
     if not result["verified"]:
         raise HTTPException(status_code=403, detail=f"Face verification failed: {result['reason']}")
 
-    now = datetime.utcnow()
+    now = get_ist_time()
     rec.check_out = now
     diff = now - rec.check_in
     rec.work_hours = round(diff.total_seconds() / 3600, 2)
@@ -162,7 +163,7 @@ def face_check_out(req: FaceCheckOutRequest, db: Session = Depends(get_db)):
 
 @router.get("/today")
 def get_today_records(db: Session = Depends(get_db)):
-    today = date.today()
+    today = get_ist_date()
     records = db.query(FaceAttendance).filter(FaceAttendance.date == today).all()
     return [_fmt_record(r, db) for r in records]
 

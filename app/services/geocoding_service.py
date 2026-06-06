@@ -1,3 +1,4 @@
+from app.logger import logger
 """Geocoding and distance calculation services."""
 import math
 import json
@@ -86,7 +87,7 @@ def get_org_coordinates(db: Session) -> dict:
                 "radius": setting.radius
             }
     except Exception as e:
-        print(f"Error reading geofence setting from DB: {e}")
+        logger.error(f"Error reading geofence setting from DB: {e}")
         
     return {
         "latitude": settings.ORG_LATITUDE,
@@ -109,7 +110,7 @@ def update_org_coordinates(db: Session, lat: float, lon: float, radius: float = 
             setting.radius = radius
         db.commit()
     except Exception as e:
-        print(f"Error updating geofence setting in DB: {e}")
+        logger.error(f"Error updating geofence setting in DB: {e}")
         
     return {
         "latitude": lat,

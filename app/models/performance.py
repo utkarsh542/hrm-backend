@@ -1,6 +1,7 @@
 """Performance review and goal models."""
 import enum
 from datetime import datetime
+from app.utils.timezone import get_ist_time
 from sqlalchemy import Column, Integer, String, Text, DateTime, Enum as SAEnum, Float
 from app.database import Base
 
@@ -55,8 +56,8 @@ class PerformanceReview(Base):
     subordinate_rating = Column(Float, nullable=True)
     ai_review_draft = Column(Text, nullable=True)      # AI-generated review draft
     
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)
+    updated_at = Column(DateTime, default=get_ist_time, onupdate=get_ist_time)
 
 
 class Goal(Base):
@@ -70,5 +71,5 @@ class Goal(Base):
     status = Column(SAEnum(GoalStatus), default=GoalStatus.NOT_STARTED)
     progress = Column(Integer, default=0)  # 0-100
     priority = Column(String, default="medium")  # low, medium, high
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)
+    updated_at = Column(DateTime, default=get_ist_time, onupdate=get_ist_time)

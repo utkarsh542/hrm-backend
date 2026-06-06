@@ -1,3 +1,5 @@
+from app.utils.timezone import get_ist_time, get_ist_date
+from app.logger import logger
 """HRMS Backend — FastAPI Application Entry Point."""
 # Monkeypatch passlib bcrypt issue with newer bcrypt versions before any other imports
 try:
@@ -34,20 +36,22 @@ app = FastAPI(
 )
 
 
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    print("\n========== ERROR OCCURRED ==========")
-    print(f"URL: {request.url}")
-    print(traceback.format_exc())
-    print("====================================\n")
-
-    return JSONResponse(
-        status_code=500,
-        content={
-            "message": str(exc),
-            "path": str(request.url),
-        },
-    )
+@app.middleware("http")
+async def exception_handling_middleware(request: Request, call_next):
+    try:
+        return await call_next(request)
+    except Exception as exc:
+        logger.error("========== ERROR OCCURRED ==========")
+        logger.error(f"URL: {request.url}")
+        logger.error(traceback.format_exc())
+        logger.error("====================================")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "message": str(exc),
+                "path": str(request.url),
+            },
+        )
 # CORS — allow frontend
 app.add_middleware(
     CORSMiddleware,
@@ -92,6 +96,8 @@ app.include_router(activities.router)
 
 @app.on_event("startup")
 def startup():
+    from app.logger import configure_global_logging
+    configure_global_logging()
     # Import all models so SQLAlchemy registers them before create_tables
     from app.models import user, employee, job, candidate, interview, attendance, payroll, performance, offboarding, document, expense, face_attendance  # noqa
     create_tables()
@@ -294,7 +300,7 @@ def seed_demo_data():
                     source=random.choice(list(ApplicationSource)),
                     ai_score=ai_score,
                     ai_summary=f"Simulated screening complete. Candidate has matching skills: {cand.skills}.",
-                    applied_at=datetime.utcnow() - timedelta(days=random.randint(1, 30)),
+                    applied_at=get_ist_time() - timedelta(days=random.randint(1, 30)),
                 )
                 applications.append(app)
         db.add_all(applications)
@@ -311,7 +317,7 @@ def seed_demo_data():
                 application_id=app.id, candidate_id=app.candidate_id, job_id=app.job_id,
                 interview_type=random.choice([InterviewType.TECHNICAL, InterviewType.HR, InterviewType.BEHAVIORAL]),
                 status=InterviewStatus.SCHEDULED,
-                scheduled_at=datetime.utcnow() + timedelta(days=random.randint(1, 7), hours=random.randint(9, 17)),
+                scheduled_at=get_ist_time() + timedelta(days=random.randint(1, 7), hours=random.randint(9, 17)),
                 duration_minutes=60,
                 interviewer_name="Amit Patel",
                 meeting_link=f"https://meet.hrms.com/interview-{app.id}",
@@ -322,12 +328,12 @@ def seed_demo_data():
         
         # ===== LEAVE REQUESTS =====
         leave_requests = [
-            LeaveRequest(employee_id=4, leave_type=LeaveType.CASUAL, start_date=date.today() + timedelta(days=5),
-                        end_date=date.today() + timedelta(days=6), days=2, reason="Personal work", status=LeaveStatus.PENDING),
-            LeaveRequest(employee_id=7, leave_type=LeaveType.SICK, start_date=date.today() - timedelta(days=2),
-                        end_date=date.today() - timedelta(days=1), days=2, reason="Fever", status=LeaveStatus.APPROVED, approved_by=1),
-            LeaveRequest(employee_id=10, leave_type=LeaveType.EARNED, start_date=date.today() + timedelta(days=10),
-                        end_date=date.today() + timedelta(days=14), days=5, reason="Family vacation", status=LeaveStatus.PENDING),
+            LeaveRequest(employee_id=4, leave_type=LeaveType.CASUAL, start_date=get_ist_date() + timedelta(days=5),
+                        end_date=get_ist_date() + timedelta(days=6), days=2, reason="Personal work", status=LeaveStatus.PENDING),
+            LeaveRequest(employee_id=7, leave_type=LeaveType.SICK, start_date=get_ist_date() - timedelta(days=2),
+                        end_date=get_ist_date() - timedelta(days=1), days=2, reason="Fever", status=LeaveStatus.APPROVED, approved_by=1),
+            LeaveRequest(employee_id=10, leave_type=LeaveType.EARNED, start_date=get_ist_date() + timedelta(days=10),
+                        end_date=get_ist_date() + timedelta(days=14), days=5, reason="Family vacation", status=LeaveStatus.PENDING),
         ]
         db.add_all(leave_requests)
         db.commit()
@@ -375,8 +381,8 @@ def seed_demo_data():
         # ===== RESIGNATION (sample) =====
         resignation = Resignation(
             employee_id=11, reason="Pursuing higher studies",
-            resignation_date=date.today() - timedelta(days=10),
-            last_working_day=date.today() + timedelta(days=20),
+            resignation_date=get_ist_date() - timedelta(days=10),
+            last_working_day=get_ist_date() + timedelta(days=20),
             notice_period_days=30, status=ResignationStatus.HR_PROCESSING,
         )
         db.add(resignation)
@@ -388,11 +394,11 @@ def seed_demo_data():
         
         db.commit()
         
-        print("[OK] Demo data seeded successfully!")
+        logger.info("Demo data seeded successfully!")
         
     except Exception as e:
         db.rollback()
-        print(f"[WARN] Seed error (may already exist): {e}")
+        logger.warning(f"Seed error (may already exist): {e}")
     finally:
         db.close()
 
@@ -442,8 +448,8 @@ def fix_manager_relationships():
             sales_exec.reporting_manager_id = sales_mgr.id
             
         db.commit()
-        print("[OK] Manager relationships configured successfully in existing database!")
+        logger.info("Manager relationships configured successfully in existing database!")
     except Exception as e:
-        print(f"Error fixing manager relationships: {e}")
+        logger.error(f"Error fixing manager relationships: {e}")
     finally:
         db.close()

@@ -1,6 +1,7 @@
 """Job posting model."""
 import enum
 from datetime import datetime
+from app.utils.timezone import get_ist_time
 from sqlalchemy import Column, Integer, String, Text, DateTime, Enum as SAEnum, Float
 from app.database import Base
 
@@ -37,6 +38,6 @@ class Job(Base):
     status = Column(SAEnum(JobStatus), default=JobStatus.OPEN)
     openings = Column(Integer, default=1)
     posted_by = Column(Integer, nullable=True)  # User ID
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)
+    updated_at = Column(DateTime, default=get_ist_time, onupdate=get_ist_time)
     closing_date = Column(DateTime, nullable=True)

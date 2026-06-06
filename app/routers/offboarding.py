@@ -1,5 +1,6 @@
 """Offboarding router — resignations, exit interviews, document generation, final settlement."""
 import os
+from app.utils.timezone import get_ist_date
 from datetime import date, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -56,7 +57,7 @@ def submit_resignation(request: ResignationCreate, db: Session = Depends(get_db)
         raise HTTPException(status_code=404, detail="Employee not found")
     
     # Calculate last working day
-    lwd = date.today() + timedelta(days=request.notice_period_days)
+    lwd = get_ist_date() + timedelta(days=request.notice_period_days)
     
     resignation = Resignation(
         **request.model_dump(),
@@ -128,8 +129,7 @@ def submit_resignation(request: ResignationCreate, db: Session = Depends(get_db)
                     reason=request.reason
                 )
     except Exception as e:
-        import logging
-        logger = logging.getLogger("uvicorn")
+        from app.logger import logger
         logger.error(f"Error in resignation offboarding notification triggers: {e}")
     
     dept = db.query(Department).filter(Department.id == emp.department_id).first()
@@ -310,8 +310,7 @@ def complete_offboarding(resignation_id: int, db: Session = Depends(get_db)):
                 exit_interview_done=bool(resignation.exit_interview_done)
             )
         except Exception as e:
-            import logging
-            logger = logging.getLogger("uvicorn")
+            from app.logger import logger
             logger.error(f"Error in offboarding completion notification: {e}")
             
     return {"message": "Offboarding completed successfully"}

@@ -1,4 +1,5 @@
 """Onboarding router — AI-powered employee onboarding."""
+from app.utils.timezone import get_ist_time
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -117,7 +118,7 @@ def update_task(task_id: int, status: str, notes: str = None, db: Session = Depe
     except ValueError:
         task.status = OnboardingTaskStatus.pending
     if status == "completed":
-        task.completed_at = datetime.utcnow()
+        task.completed_at = get_ist_time()
     if notes:
         task.notes = notes
     db.commit()
@@ -128,6 +129,6 @@ def update_task(task_id: int, status: str, notes: str = None, db: Session = Depe
         all_tasks = db.query(OnboardingTask).filter(OnboardingTask.plan_id == plan.id).all()
         if all(t.status == OnboardingTaskStatus.completed for t in all_tasks):
             plan.status = "completed"
-            plan.completed_at = datetime.utcnow()
+            plan.completed_at = get_ist_time()
             db.commit()
     return {"success": True}

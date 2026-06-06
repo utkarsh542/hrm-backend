@@ -1,4 +1,5 @@
 """Employee engagement models — surveys, mood tracking, wellness."""
+from app.utils.timezone import get_ist_time, get_ist_date
 from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, Date, JSON, Enum as SQLEnum
 from datetime import datetime, date
 from app.database import Base
@@ -19,7 +20,7 @@ class PulseSurvey(Base):
     questions = Column(JSON, nullable=False)
     status = Column(SQLEnum(SurveyStatus), default=SurveyStatus.draft)
     created_by = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)
     closes_at = Column(DateTime, nullable=True)
 
 
@@ -30,7 +31,7 @@ class SurveyResponse(Base):
     employee_id = Column(Integer, nullable=True)
     answers = Column(JSON, nullable=False)
     sentiment_score = Column(Float, nullable=True)
-    submitted_at = Column(DateTime, default=datetime.utcnow)
+    submitted_at = Column(DateTime, default=get_ist_time)
 
 
 class MoodEntry(Base):
@@ -39,5 +40,5 @@ class MoodEntry(Base):
     employee_id = Column(Integer, nullable=False, index=True)
     mood = Column(Integer, nullable=False)
     note = Column(Text, nullable=True)
-    date = Column(Date, default=date.today)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    date = Column(Date, default=get_ist_date)
+    created_at = Column(DateTime, default=get_ist_time)

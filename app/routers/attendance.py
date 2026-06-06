@@ -1,5 +1,6 @@
 """Attendance & Leave router."""
 import random
+from app.utils.timezone import get_ist_time, get_ist_date
 from datetime import datetime, date
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -107,7 +108,7 @@ def check_in(
             detail="Check-in rejected: Physical location coordinates are required for geofence validation."
         )
 
-    today = date.today()
+    today = get_ist_date()
     existing = db.query(Attendance).filter(
         Attendance.employee_id == target_emp_id,
         Attendance.date == today
@@ -117,7 +118,7 @@ def check_in(
         raise HTTPException(status_code=400, detail="Already checked in today")
     
     if existing:
-        existing.check_in = datetime.utcnow()
+        existing.check_in = get_ist_time()
         existing.status = AttendanceStatus.PRESENT
         existing.check_in_lat = check_in_lat
         existing.check_in_lon = check_in_lon
@@ -128,7 +129,7 @@ def check_in(
         attendance = Attendance(
             employee_id=target_emp_id,
             date=today,
-            check_in=datetime.utcnow(),
+            check_in=get_ist_time(),
             status=AttendanceStatus.PRESENT,
             check_in_lat=check_in_lat,
             check_in_lon=check_in_lon,
@@ -139,7 +140,7 @@ def check_in(
         db.add(attendance)
     
     db.commit()
-    return {"message": f"✅ Checked in successfully (Face verified with {int(face_res['confidence']*100)}% match!)", "time": datetime.utcnow().isoformat()}
+    return {"message": f"✅ Checked in successfully (Face verified with {int(face_res['confidence']*100)}% match!)", "time": get_ist_time().isoformat()}
 
 
 @router.post("/check-out")
@@ -194,7 +195,7 @@ def check_out(
             detail="Check-out rejected: Physical location coordinates are required for geofence validation."
         )
 
-    today = date.today()
+    today = get_ist_date()
     attendance = db.query(Attendance).filter(
         Attendance.employee_id == target_emp_id,
         Attendance.date == today
@@ -203,7 +204,7 @@ def check_out(
     if not attendance or not attendance.check_in:
         raise HTTPException(status_code=400, detail="Not checked in today")
     
-    attendance.check_out = datetime.utcnow()
+    attendance.check_out = get_ist_time()
     attendance.check_out_lat = check_out_lat
     attendance.check_out_lon = check_out_lon
     attendance.check_out_address = check_out_address
@@ -402,8 +403,7 @@ def apply_leave(
                 link="/approvals"
             )
     except Exception as e:
-        import logging
-        logger = logging.getLogger("uvicorn")
+        from app.logger import logger
         logger.error(f"Error in leave application notifications: {e}")
         
     resp = LeaveRequestResponse.model_validate(leave)
@@ -537,7 +537,7 @@ def update_leave(
     if request.status == "approved":
         if leave.status != LeaveStatus.APPROVED:
             leave.status = LeaveStatus.APPROVED
-            leave.approved_at = datetime.utcnow()
+            leave.approved_at = get_ist_time()
             
             # Deduct leave balance
             emp = db.query(Employee).filter(Employee.id == leave.employee_id).first()
@@ -609,8 +609,7 @@ def update_leave(
                 comments=remarks
             )
     except Exception as e:
-        import logging
-        logger = logging.getLogger("uvicorn")
+        from app.logger import logger
         logger.error(f"Error in leave status update notifications: {e}")
         
     resp = LeaveRequestResponse.model_validate(leave)
@@ -1021,28 +1020,28 @@ def action_compoff_request(
         if is_hr_or_admin:
             req.hr_status = "rejected"
             req.hr_id = current_user.id
-            req.hr_action_at = datetime.utcnow()
+            req.hr_action_at = get_ist_time()
         if is_reporting_manager or (is_hr_or_admin and requester.reporting_manager_id is None):
             req.manager_status = "rejected"
             req.manager_id = current_employee.id
-            req.manager_action_at = datetime.utcnow()
+            req.manager_action_at = get_ist_time()
     elif action == "approve":
         # Handle reporting manager approval
         if is_reporting_manager:
             req.manager_status = "approved"
             req.manager_id = current_employee.id
-            req.manager_action_at = datetime.utcnow()
+            req.manager_action_at = get_ist_time()
         # Handle HR/Admin approval
         if is_hr_or_admin:
             req.hr_status = "approved"
             req.hr_id = current_user.id
-            req.hr_action_at = datetime.utcnow()
+            req.hr_action_at = get_ist_time()
             
             # If the requester has no reporting manager, HR approval can automatically cover manager status
             if requester.reporting_manager_id is None:
                 req.manager_status = "approved"
                 req.manager_id = current_employee.id
-                req.manager_action_at = datetime.utcnow()
+                req.manager_action_at = get_ist_time()
                 
         # If both approved, finalize request and add comp-off credit to balance!
         if req.manager_status == "approved" and req.hr_status == "approved":

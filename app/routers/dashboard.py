@@ -1,4 +1,5 @@
 """Dashboard router — KPIs, stats, hiring funnel, recent activity."""
+from app.utils.timezone import get_ist_date
 from datetime import datetime, date, timedelta
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -28,7 +29,7 @@ def get_dashboard_stats(
 ):
     role_val = current_user.role.value if hasattr(current_user.role, "value") else str(current_user.role)
     if role_val.lower() == "employee":
-        today = date.today()
+        today = get_ist_date()
         first_of_month = today.replace(day=1)
         
         pending_leaves = db.query(LeaveRequest).filter(
@@ -67,7 +68,7 @@ def get_dashboard_stats(
     open_positions = db.query(Job).filter(Job.status == JobStatus.OPEN).count()
     total_applications = db.query(Application).count()
     
-    today = date.today()
+    today = get_ist_date()
     interviews_today = db.query(Interview).filter(
         func.date(Interview.scheduled_at) == today,
         Interview.status == InterviewStatus.SCHEDULED

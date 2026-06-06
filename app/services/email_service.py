@@ -5,10 +5,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 from typing import Optional
-import logging
 from app.config import settings
-
-logger = logging.getLogger("uvicorn")
+from app.logger import logger
 
 
 def _print_simulated_email(to_email: str, subject: str, body_text: str):

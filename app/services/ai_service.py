@@ -7,13 +7,12 @@ import os
 import json
 import random
 import hashlib
+from app.utils.timezone import get_ist_date
 from datetime import date
 from typing import List, Dict, Optional
 import urllib.request
 import urllib.error
-import logging
-
-logger = logging.getLogger("uvicorn")
+from app.logger import logger
 
 from app.config import settings
 
@@ -31,7 +30,7 @@ def _load_cache() -> dict:
             with open(_CACHE_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
     except Exception as e:
-        print(f"[AI] Error loading persistent cache: {e}")
+        logger.error(f"[AI] Error loading persistent cache: {e}")
     return {}
 
 def _save_cache(cache: dict):
@@ -39,7 +38,7 @@ def _save_cache(cache: dict):
         with open(_CACHE_FILE, "w", encoding="utf-8") as f:
             json.dump(cache, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        print(f"[AI] Error saving persistent cache: {e}")
+        logger.error(f"[AI] Error saving persistent cache: {e}")
 
 _AI_CACHE = _load_cache()
 
@@ -428,7 +427,7 @@ def calculate_attrition_risk(employee, reviews: list, leaves: list, attendance_c
 
     # Tenure risk
     joining = employee.joining_date
-    tenure_months = (date.today() - joining).days // 30 if joining else 24
+    tenure_months = (get_ist_date() - joining).days // 30 if joining else 24
     if tenure_months < 12:
         risk_score += 25
         factors.append("Less than 1 year tenure — high flight risk window")

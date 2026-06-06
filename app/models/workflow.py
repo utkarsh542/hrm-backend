@@ -1,4 +1,5 @@
 """Approval workflow models."""
+from app.utils.timezone import get_ist_time
 from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, Boolean, Enum as SQLEnum
 from datetime import datetime
 from app.database import Base
@@ -20,7 +21,7 @@ class ApprovalWorkflow(Base):
     steps = Column(JSON, nullable=False)
     auto_escalation_hours = Column(Integer, default=48)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)
 
 
 class ApprovalRequest(Base):
@@ -36,5 +37,5 @@ class ApprovalRequest(Base):
     description = Column(Text, nullable=True)
     approver_id = Column(Integer, nullable=True, index=True)
     comments = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)
     acted_at = Column(DateTime, nullable=True)

@@ -1,6 +1,7 @@
 """Employee and department models."""
 import enum
 from datetime import datetime, date
+from app.utils.timezone import get_ist_time, get_ist_date
 from sqlalchemy import Column, Integer, String, Text, DateTime, Date, Enum as SAEnum, Float, Boolean
 from app.database import Base
 
@@ -33,7 +34,7 @@ class Department(Base):
     name = Column(String, unique=True, nullable=False)
     head_employee_id = Column(Integer, nullable=True)
     description = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)
 
 
 class Employee(Base):
@@ -56,7 +57,7 @@ class Employee(Base):
     designation = Column(String, nullable=True)
     employment_type = Column(SAEnum(EmploymentType), default=EmploymentType.FULL_TIME)
     employment_status = Column(SAEnum(EmploymentStatus), default=EmploymentStatus.ACTIVE)
-    joining_date = Column(Date, nullable=False, default=date.today)
+    joining_date = Column(Date, nullable=False, default=get_ist_date)
     reporting_manager_id = Column(Integer, nullable=True, index=True)
     
     # Compensation
@@ -88,5 +89,5 @@ class Employee(Base):
     # Meta
     avatar_url = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_time)
+    updated_at = Column(DateTime, default=get_ist_time, onupdate=get_ist_time)

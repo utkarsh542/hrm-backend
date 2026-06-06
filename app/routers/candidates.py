@@ -1,3 +1,5 @@
+from app.utils.timezone import get_ist_time
+from app.logger import logger
 """Candidates & Applications router."""
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
@@ -207,7 +209,7 @@ def update_application(app_id: int, request: ApplicationUpdate, db: Session = De
                     from app.services.email_service import send_welcome_email
                     send_welcome_email(candidate.email, candidate.full_name, temp_pass)
                 except Exception as e:
-                    print("Failed to send welcome email:", e)
+                    logger.error("Failed to send welcome email: %s", e)
                     
 
 
@@ -289,7 +291,7 @@ def send_offer_letter(app_id: int, req: OfferLetterRequest, db: Session = Depend
         f"JOIN_DATE: {req.joining_date}\n"
         f"PROBATION: {req.probation_months}\n"
         f"VALID_UNTIL: {req.valid_until}\n"
-        f"OFFER_SENT_AT: {datetime.utcnow().isoformat()}\n"
+        f"OFFER_SENT_AT: {get_ist_time().isoformat()}\n"
     )
     application.status = ApplicationStatus.OFFERED
     db.commit()
@@ -345,7 +347,7 @@ def send_offer_letter(app_id: int, req: OfferLetterRequest, db: Session = Depend
         pdf_name = f"Offer_Letter_{candidate.full_name.replace(' ', '_')}.pdf"
         send_email_with_attachment(candidate.email, subject, html_content, text_content, pdf_bytes, pdf_name)
     except Exception as e:
-        print("Failed to generate and dispatch offer letter PDF email:", e)
+        logger.error("Failed to generate and dispatch offer letter PDF email: %s", e)
         
     return {"success": True, "message": "Offer letter, Annexure and Policies PDF successfully sent to candidate"}
 
