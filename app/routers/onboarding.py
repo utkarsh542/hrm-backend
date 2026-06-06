@@ -63,6 +63,19 @@ def generate_plan(employee_id: int, db: Session = Depends(get_db)):
     emp = db.query(Employee).filter(Employee.id == employee_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
+
+    # Check if onboarding plan already exists for this employee ID
+    existing_plan = db.query(OnboardingPlan).filter(OnboardingPlan.employee_id == employee_id).first()
+    if existing_plan:
+        raise HTTPException(status_code=400, detail="Onboarding plan already exists for this employee")
+
+    # Check if onboarding plan already exists for an employee with the same name
+    same_name_employees = db.query(Employee).filter(Employee.full_name.like(emp.full_name)).all()
+    same_name_ids = [e.id for e in same_name_employees]
+    existing_name_plan = db.query(OnboardingPlan).filter(OnboardingPlan.employee_id.in_(same_name_ids)).first()
+    if existing_name_plan:
+        raise HTTPException(status_code=400, detail="Onboarding plan already exists for an employee with this name")
+
     dept_name = ""
     if emp.department_id:
         dept = db.query(Department).filter(Department.id == emp.department_id).first()
